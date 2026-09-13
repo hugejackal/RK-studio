@@ -1,0 +1,16 @@
+# Generated production config — created by Netlify build
+config.js
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Dependencies
+node_modules/
+
+# Local environment files
+.env
+.env.*
+!.env.example

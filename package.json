@@ -1,0 +1,8 @@
+{
+  "name": "rk-studio",
+  "private": true,
+  "version": "148.0.0",
+  "scripts": {
+    "build": "node scripts/generate-config.mjs"
+  }
+}
