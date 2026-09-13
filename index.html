@@ -2184,25 +2184,19 @@ body.theme-dark .actions .btn{
 
 <!-- RK Studio Supabase Phase 2A -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script id="rk-v149-supabase-config">
-(function(){
-  window.RK_CONFIG=Object.freeze({
-    supabaseUrl:"https://hkivqeonfsrfmethqmhc.supabase.co",
-    supabasePublishableKey:"sb_publishable_TEFeA55ricEVhKlMwNf8hw_cL7FMH6o"
-  });
-  window.RK_SUPABASE_URL=window.RK_CONFIG.supabaseUrl;
-  window.RK_SUPABASE_PUBLISHABLE_KEY=window.RK_CONFIG.supabasePublishableKey;
-  window.RK_SUPABASE=null;
-  try{
-    if(window.supabase?.createClient){
-      window.RK_SUPABASE=window.supabase.createClient(
-        window.RK_SUPABASE_URL,
-        window.RK_SUPABASE_PUBLISHABLE_KEY,
-        {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}}
-      );
-    }
-  }catch(e){console.error("RK Studio Supabase init failed:",e);}
-})();
+<script id="rk-v136-supabase-config">
+window.RK_SUPABASE_URL="https://hkivqeonfsrfmethqmhc.supabase.co";
+window.RK_SUPABASE_PUBLISHABLE_KEY="sb_publishable_TEFeA55ricEVhKlMwNf8hw_cL7FMH6o";
+window.RK_SUPABASE=null;
+try{
+  if(window.supabase?.createClient){
+    window.RK_SUPABASE=window.supabase.createClient(
+      window.RK_SUPABASE_URL,
+      window.RK_SUPABASE_PUBLISHABLE_KEY,
+      {auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}}
+    );
+  }
+}catch(e){console.error("RK Studio Supabase init failed:",e);}
 </script>
 
 <style id="rk-v138-cloud-status-css">
@@ -3234,13 +3228,37 @@ function openUserModal(id=null){
  <div style="margin-top:16px"><button class="btn" onclick="saveUser('${id||''}')">Save User</button></div>`);
 }
 async function rkCloudAdminCall(action,payload={}){
- if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return {cloud:false};
- const {data:sessionData}=await window.RK_SUPABASE.auth.getSession();
- if(!sessionData?.session?.access_token)throw new Error('Supabase session expired. Please login again.');
- const {data,error}=await window.RK_SUPABASE.functions.invoke('rk-admin-users',{body:{action,...payload}});
- if(error)throw new Error(error.message||'Cloud user operation failed.');
- if(data?.error)throw new Error(data.error);
- return {cloud:true,data};
+  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase'){
+    return {cloud:false};
+  }
+
+  const {data:sessionData,error:sessionError}=await window.RK_SUPABASE.auth.getSession();
+  const session=sessionData?.session;
+  if(sessionError||!session?.access_token){
+    throw new Error('Supabase session expired. Please logout and login again.');
+  }
+
+  // Explicitly pass the user's JWT. supabase.functions.invoke normally forwards
+  // it automatically, but making it explicit avoids auth mismatches after a
+  // site/SDK transition and lets the Edge Function's auth context verify the
+  // actual signed-in user.
+  const headers={
+    Authorization:`Bearer ${session.access_token}`,
+    apikey:window.RK_SUPABASE_PUBLISHABLE_KEY
+  };
+
+  const {data,error}=await window.RK_SUPABASE.functions.invoke(
+    'rk-admin-users',
+    {body:{action,...payload},headers}
+  );
+
+  if(error){
+    const detail=error.context?.body || error.message || 'Cloud user operation failed.';
+    let message=typeof detail==='string'?detail:JSON.stringify(detail);
+    throw new Error(message);
+  }
+  if(data?.error)throw new Error(data.error);
+  return {cloud:true,data};
 }
 async function saveUser(id){
  if(!hasPermission('userManagement'))return;
@@ -5347,6 +5365,23 @@ window.rkCloudSyncSettings=async function(){
   }
   [500,1200,2200].forEach(ms=>setTimeout(mount,ms));
   setInterval(mount,2500);
+})();
+</script>
+
+<script id="rk-v151-auth-diagnostic">
+(function(){
+  window.rkCheckAdminAuth=async function(){
+    try{
+      if(!window.RK_SUPABASE)return {ok:false,reason:'supabase client missing'};
+      const {data,error}=await window.RK_SUPABASE.auth.getSession();
+      return {
+        ok:!!data?.session,
+        hasAccessToken:!!data?.session?.access_token,
+        userId:data?.session?.user?.id||null,
+        error:error?.message||null
+      };
+    }catch(e){return {ok:false,error:e?.message||String(e)}}
+  };
 })();
 </script>
 </body>
