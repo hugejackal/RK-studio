@@ -1,8 +1,8 @@
 {
   "name": "rk-studio",
   "private": true,
-  "version": "148.0.0",
+  "version": "149.0.0",
   "scripts": {
-    "build": "node scripts/generate-config.mjs"
+    "build": "echo RK Studio static build - no build step required"
   }
 }

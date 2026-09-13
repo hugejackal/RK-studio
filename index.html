@@ -2184,15 +2184,17 @@ body.theme-dark .actions .btn{
 
 <!-- RK Studio Supabase Phase 2A -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="./config.js" defer></script>
-<script id="rk-v148-supabase-config">
+<script id="rk-v149-supabase-config">
 (function(){
-  window.RK_CONFIG=window.RK_CONFIG||{};
-  window.RK_SUPABASE_URL=window.RK_CONFIG.supabaseUrl||'';
-  window.RK_SUPABASE_PUBLISHABLE_KEY=window.RK_CONFIG.supabasePublishableKey||'';
+  window.RK_CONFIG=Object.freeze({
+    supabaseUrl:"https://hkivqeonfsrfmethqmhc.supabase.co",
+    supabasePublishableKey:"sb_publishable_TEFeA55ricEVhKlMwNf8hw_cL7FMH6o"
+  });
+  window.RK_SUPABASE_URL=window.RK_CONFIG.supabaseUrl;
+  window.RK_SUPABASE_PUBLISHABLE_KEY=window.RK_CONFIG.supabasePublishableKey;
   window.RK_SUPABASE=null;
   try{
-    if(window.supabase?.createClient && window.RK_SUPABASE_URL && window.RK_SUPABASE_PUBLISHABLE_KEY){
+    if(window.supabase?.createClient){
       window.RK_SUPABASE=window.supabase.createClient(
         window.RK_SUPABASE_URL,
         window.RK_SUPABASE_PUBLISHABLE_KEY,
@@ -5345,15 +5347,6 @@ window.rkCloudSyncSettings=async function(){
   }
   [500,1200,2200].forEach(ms=>setTimeout(mount,ms));
   setInterval(mount,2500);
-})();
-</script>
-
-<script id="rk-v148-production-diagnostic">
-(function(){
-  window.RK_PRODUCTION_CONFIG_OK=!!(window.RK_SUPABASE_URL&&window.RK_SUPABASE_PUBLISHABLE_KEY);
-  if(!window.RK_PRODUCTION_CONFIG_OK){
-    console.warn('RK Studio: Supabase production config is missing. Local fallback remains available.');
-  }
 })();
 </script>
 </body>

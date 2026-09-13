@@ -1,12 +1,9 @@
 [build]
-  command = "node scripts/generate-config.mjs"
   publish = "."
 
 [build.environment]
   NODE_VERSION = "20"
 
-# Static security headers. Supabase publishable keys are public by design;
-# database access is controlled by Supabase Auth + RLS.
 [[headers]]
   for = "/*"
   [headers.values]
