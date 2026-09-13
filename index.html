@@ -4825,7 +4825,26 @@ function customerTimeline(cid){
       ((parseInt(hex.slice(16,18),16)&0x3f)|0x80).toString(16).padStart(2,'0')+
       hex.slice(18,20)+'-'+hex.slice(20,32);
   }
-  const logToRow=x=>({id:rkCloudActivityUuid(x.id),type:x.type||'System',action:x.action||'',detail:x.detail||'',entity_type:x.entityType||null,entity_id:x.entityId||null,user_id:null,created_at:x.at||new Date().toISOString()});
+  const logToRow=x=>{
+    const fingerprint=[
+      x.id||'',
+      x.at||x.createdAt||'',
+      x.type||'System',
+      x.action||'',
+      x.detail||'',
+      x.entityId||''
+    ].join('|');
+    return {
+      id:rkCloudActivityUuid(fingerprint),
+      type:x.type||'System',
+      action:x.action||'',
+      detail:x.detail||'',
+      entity_type:x.entityType||null,
+      entity_id:x.entityId||null,
+      user_id:null,
+      created_at:x.at||x.createdAt||new Date().toISOString()
+    };
+  };
   const rowToLog=r=>({id:String(r.id),type:r.type||'System',action:r.action||'',detail:r.detail||'',entityId:r.entity_id||'',userId:r.user_id||'',user:r.user||'Cloud',at:r.created_at||new Date().toISOString()});
 
   function localRows(table){
@@ -4836,7 +4855,17 @@ function customerTimeline(cid){
     if(table.name==='invoice_items')return (db.invoices||[]).flatMap(invoiceItemsToRows);
     if(table.name==='payments')return (db.payments||[]).map(paymentToRow);
     if(table.name==='expenses')return (db.expenses||[]).map(expenseToRow);
-    if(table.name==='activity_logs')return (db.activityLog||[]).map(logToRow);
+    if(table.name==='activity_logs'){
+      const rows=[];
+      const seen=new Set();
+      for(const x of (db.activityLog||[])){
+        const row=logToRow(x);
+        if(seen.has(row.id))continue;
+        seen.add(row.id);
+        rows.push(row);
+      }
+      return rows;
+    }
     return [];
   }
   function remoteToLocal(table,rows){
