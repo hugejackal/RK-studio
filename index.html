@@ -3578,7 +3578,13 @@ function applyUIThemePreset(name){
     fontFamily:p.font,shadow:p.shadow,cardBorder:p.border,buttonStyle:p.button
   });
   save();applyUI();render();
-  if(typeof rkToast==="function")rkToast(name+" theme applied");else alert(name+" theme applied");
+  Promise.resolve(window.rkCloudSyncSettings?.()).then(()=>{
+    if(typeof rkToast==="function")rkToast(name+" theme applied");
+  }).catch(e=>{
+    window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
+    if(typeof rkToast==="function")rkToast(name+" applied locally · cloud sync failed","error");
+    console.warn('Theme preset cloud sync failed:',e);
+  });
 }
 
 function rkThemePresets(){
@@ -3729,7 +3735,57 @@ settings.innerHTML=`<div class="top"><div><h1>Settings</h1><div class="sub">RK S
 }
 if(window.rkGuardWelcomeSettings) rkGuardWelcomeSettings();
 
-function saveSettings(){if(!hasPermission('settings'))return alert('You do not have permission to change settings.');db.settings={...db.settings,studio:s_name.value||'RK Studio',phone:s_phone.value,address:s_address.value,primary:ui_primary.value,secondary:ui_secondary.value,background:ui_background.value,cardColor:ui_card.value,theme:ui_theme.value,sidebar:ui_sidebar.value,sidebarColor:ui_sidebar_color.value,compact:ui_compact.value,sidebarWidth:Number(ui_sidebar_width.value),radius:Number(ui_radius.value),fontSize:Number(ui_font_size.value),fontFamily:ui_font.value,shadow:ui_shadow.value,cardBorder:ui_card_border.value,buttonStyle:ui_button_style.value};applyUI();save();if(window.rkCloudSyncSettings)window.rkCloudSyncSettings();render()}
+async function saveSettings(){
+  if(!hasPermission('settings')){
+    alert('You do not have permission to change settings.');
+    return;
+  }
+
+  const $=id=>document.getElementById(id);
+  const next={
+    ...db.settings,
+    studio:$('s_name')?.value||'RK Studio',
+    phone:$('s_phone')?.value||'',
+    address:$('s_address')?.value||'',
+    primary:$('ui_primary')?.value||db.settings.primary||'#6c4df6',
+    secondary:$('ui_secondary')?.value||db.settings.secondary||'#9a84ff',
+    background:$('ui_background')?.value||db.settings.background||'#f5f6fa',
+    cardColor:$('ui_card')?.value||db.settings.cardColor||'#ffffff',
+    theme:$('ui_theme')?.value||db.settings.theme||'light',
+    sidebar:$('ui_sidebar')?.value||db.settings.sidebar||'dark',
+    sidebarColor:$('ui_sidebar_color')?.value||db.settings.sidebarColor||'#17151f',
+    compact:$('ui_compact')?.value||db.settings.compact||'no',
+    sidebarWidth:Number($('ui_sidebar_width')?.value||db.settings.sidebarWidth||245),
+    radius:Number($('ui_radius')?.value||db.settings.radius||15),
+    fontSize:Number($('ui_font_size')?.value||db.settings.fontSize||16),
+    fontFamily:$('ui_font')?.value||db.settings.fontFamily||'Inter,system-ui,-apple-system,Segoe UI,sans-serif',
+    shadow:$('ui_shadow')?.value||db.settings.shadow||'soft',
+    cardBorder:$('ui_card_border')?.value||db.settings.cardBorder||'on',
+    buttonStyle:$('ui_button_style')?.value||db.settings.buttonStyle||'rounded'
+  };
+
+  db.settings=next;
+  applyUI();
+  save();
+
+  // Render immediately so the changed theme/colors are visible, but do not
+  // perform another cloud hydration/render cycle here.
+  render();
+
+  if(window.rkCloudSyncSettings){
+    try{
+      await window.rkCloudSyncSettings();
+      window.RK_CLOUD_LAST_ERROR='';
+      if(typeof rkToast==='function')rkToast('Settings saved');
+    }catch(e){
+      window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
+      if(typeof rkToast==='function')rkToast('Saved locally · Cloud sync failed','error');
+      console.warn('UI settings cloud sync failed:',e);
+    }
+  }else if(typeof rkToast==='function'){
+    rkToast('Settings saved');
+  }
+}
 function resetUISettings(){if(!confirm('Reset only UI customization to default?'))return;db.settings={...db.settings,studio:db.settings.studio||'RK Studio',primary:'#6c4df6',secondary:'#9a84ff',background:'#f5f6fa',cardColor:'#ffffff',theme:'light',sidebar:'dark',sidebarColor:'#17151f',compact:'no',sidebarWidth:245,radius:15,fontSize:16,fontFamily:'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:'soft',cardBorder:'on',buttonStyle:'rounded'};save();applyUI();render();}
 function backupStudioData(){
   if(!hasPermission('settings'))return alert('You do not have permission to create a backup.');
@@ -5644,13 +5700,12 @@ window.rkCloudSyncSettings=async function(){
 
   const originalSettingsSync=window.rkCloudSyncSettings;
   window.rkCloudSyncSettings=async function(){
-    if(!isCloud())return;
-    try{
-      const s=db.settings||{};
-      const {error}=await cloud().from('studio_settings').upsert(settingsToRow(s),{onConflict:'id'});
-      if(error)throw error;
-      await syncRoles();
-    }catch(e){console.warn('Cloud governance sync failed:',e)}
+    if(!isCloud())return {cloud:false};
+    const s=db.settings||{};
+    const {error}=await cloud().from('studio_settings').upsert(settingsToRow(s),{onConflict:'id'});
+    if(error)throw error;
+    await syncRoles();
+    return {cloud:true};
   };
 
   window.rkCloudHydrateGovernance=async function(){
