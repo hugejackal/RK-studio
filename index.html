@@ -3376,11 +3376,13 @@ function saveWelcomeSettings(){
     return;
   }
   const w=welcomeSettings();
-  w.enabled=!!document.getElementById("welcome_enabled")?.checked;
+  const enabledEl=document.getElementById("welcome_enabled");
+  w.enabled=enabledEl ? enabledEl.value==="1" : true;
   w.title=(document.getElementById("welcome_title")?.value||"Welcome back 👋").trim()||"Welcome back 👋";
   w.message=(document.getElementById("welcome_message")?.value||"").trim()||"Let's manage your studio today.";
   w.duration=Math.max(700,Math.min(3000,Number(document.getElementById("welcome_duration")?.value||1400)));
   save();
+  if(window.rkCloudSyncSettings) window.rkCloudSyncSettings();
   if(typeof rkToast==="function") rkToast("Welcome Screen settings saved");
   else alert("Welcome Screen settings saved");
 }
@@ -3524,6 +3526,42 @@ const st=db.settings||{};
 settings.innerHTML=`<div class="top"><div><h1>Settings</h1><div class="sub">RK Studio details, invoice preferences and complete UI customization</div></div></div>
 <div class="card"><h3>Studio Details</h3><div class="formgrid"><div><label class="label">Studio / Business Name</label><input id="s_name" value="${esc(st.studio||'RK Studio')}"></div><div><label class="label">Phone</label><input id="s_phone" value="${esc(st.phone||'')}"></div><div class="full"><label class="label">Address</label><textarea id="s_address">${esc(st.address||'')}</textarea></div></div></div>
 <div class="card" style="margin-top:16px"><h3>🏷️ Company Logo</h3><p class="muted">Upload your company/studio logo. It will appear on invoices and printed PDFs.</p><div class="logo-setting"><div id="companyLogoPreview" class="company-logo-preview">${st.companyLogo?`<img src="${st.companyLogo}" alt="Company Logo">`:'<span>No Logo</span>'}</div><div><label class="btn">📤 Upload Logo<input type="file" accept="image/png,image/jpeg,image/webp" hidden onchange="handleCompanyLogo(event)"></label> <button class="btn secondary" type="button" onclick="removeCompanyLogo()">Remove</button><div class="muted" style="margin-top:8px">PNG / JPG / WebP</div></div></div></div>
+<div class="card rk-welcome-settings-card" style="margin-top:16px">
+  <div class="top" style="margin-bottom:10px">
+    <div>
+      <h3>👋 Welcome Screen</h3>
+      <p class="muted">Customize the message shown after a successful login. Only Administrator can change it.</p>
+    </div>
+    <span class="tag">Admin only</span>
+  </div>
+  <div class="formgrid">
+    <div>
+      <label class="label">Enable Welcome Screen</label>
+      <select id="welcome_enabled">
+        <option value="1" ${welcomeSettings().enabled!==false?'selected':''}>Enabled</option>
+        <option value="0" ${welcomeSettings().enabled===false?'selected':''}>Disabled</option>
+      </select>
+    </div>
+    <div>
+      <label class="label">Duration</label>
+      <input id="welcome_duration" type="number" min="700" max="3000" step="100" value="${Number(welcomeSettings().duration||1400)}">
+      <div class="muted">700–3000 ms</div>
+    </div>
+    <div class="full">
+      <label class="label">Welcome Title</label>
+      <input id="welcome_title" value="${esc(welcomeSettings().title||'Welcome back 👋')}" placeholder="Welcome back 👋">
+    </div>
+    <div class="full">
+      <label class="label">Welcome Message</label>
+      <textarea id="welcome_message" rows="4" placeholder="Let's manage your studio today.">${esc(welcomeSettings().message||"Let's manage your studio today.")}</textarea>
+      <div class="muted" style="margin-top:6px">Available variables: {{name}}, {{studio}}, {{role}}</div>
+    </div>
+  </div>
+  <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn" type="button" onclick="saveWelcomeSettings()">💾 Save Welcome Screen</button>
+    <button class="btn secondary" type="button" onclick="previewWelcomeScreen()">▶ Preview</button>
+  </div>
+</div>
 <div class="card" style="margin-top:16px"><h3>UI Customization</h3><div class="muted">Customize RK Studio without changing your business data.</div>
 <div class="settings-section"><h4>Colors & Theme</h4><div class="formgrid"><div><label class="label">Primary Color</label><input type="color" id="ui_primary" value="${esc(st.primary||'#6c4df6')}" style="height:46px;padding:4px"></div><div><label class="label">Secondary Color</label><input type="color" id="ui_secondary" value="${esc(st.secondary||'#9a84ff')}" style="height:46px;padding:4px"></div><div><label class="label">Page Background</label><input type="color" id="ui_background" value="${esc(st.background||'#f5f6fa')}" style="height:46px;padding:4px"></div><div><label class="label">Card Color</label><input type="color" id="ui_card" value="${esc(st.cardColor||'#ffffff')}" style="height:46px;padding:4px"></div><div><label class="label">Appearance</label><select id="ui_theme"><option value="light" ${(st.theme||'light')==='light'?'selected':''}>Light</option><option value="dark" ${st.theme==='dark'?'selected':''}>Dark</option></select></div><div><label class="label">Sidebar Style</label><select id="ui_sidebar"><option value="dark" ${(st.sidebar||'dark')==='dark'?'selected':''}>Dark</option><option value="light" ${st.sidebar==='light'?'selected':''}>Light</option></select></div><div><label class="label">Sidebar Color</label><input type="color" id="ui_sidebar_color" value="${esc(st.sidebarColor||'#17151f')}" style="height:46px;padding:4px"></div></div></div>
 <div class="settings-section"><h4>Layout & Sizing</h4><div class="formgrid"><div><label class="label">Table Density</label><select id="ui_compact"><option value="no" ${(st.compact||'no')==='no'?'selected':''}>Comfortable</option><option value="yes" ${st.compact==='yes'?'selected':''}>Compact</option></select></div><div><label class="label">Sidebar Width</label><select id="ui_sidebar_width"><option value="210" ${st.sidebarWidth==210?'selected':''}>Narrow</option><option value="245" ${!st.sidebarWidth||st.sidebarWidth==245?'selected':''}>Normal</option><option value="285" ${st.sidebarWidth==285?'selected':''}>Wide</option></select></div><div><label class="label">Corner Radius</label><input type="range" min="4" max="28" id="ui_radius" value="${Number(st.radius||15)}" oninput="ui_radius_value.textContent=this.value+'px'"><div class="muted" id="ui_radius_value">${Number(st.radius||15)}px</div></div><div><label class="label">Font Size</label><input type="range" min="13" max="19" id="ui_font_size" value="${Number(st.fontSize||16)}" oninput="ui_font_size_value.textContent=this.value+'px'"><div class="muted" id="ui_font_size_value">${Number(st.fontSize||16)}px</div></div></div></div>
@@ -5333,9 +5371,9 @@ window.rkCloudSyncSettings=async function(){
       radius:Number(s.radius||15),font_size:Number(s.fontSize||16),
       font_family:s.fontFamily||null,shadow:s.shadow||null,card_border:s.cardBorder||null,
       button_style:s.buttonStyle||null,
-      welcome_enabled:s.welcomeEnabled!==false,
-      welcome_title:s.welcomeTitle||null,welcome_message:s.welcomeMessage||null,
-      welcome_duration_ms:Number(s.welcomeDuration||0)||null,
+      welcome_enabled:(s.welcome?.enabled!==false),
+      welcome_title:s.welcome?.title||null,welcome_message:s.welcome?.message||null,
+      welcome_duration_ms:Number(s.welcome?.duration||1400),
       whatsapp_templates:s.waTemplates||s.whatsappTemplates||{},
       extra_services:db.extraServices||[],custom_settings:s
     };
@@ -5363,7 +5401,13 @@ window.rkCloudSyncSettings=async function(){
       shadow:r.shadow||extra.shadow||'soft',
       cardBorder:r.card_border||extra.cardBorder||'on',
       buttonStyle:r.button_style||extra.buttonStyle||'rounded',
-      waTemplates:r.whatsapp_templates||extra.waTemplates||{}
+      waTemplates:r.whatsapp_templates||extra.waTemplates||{},
+      welcome:{
+        enabled:r.welcome_enabled!==false,
+        title:r.welcome_title||extra.welcome?.title||'Welcome back 👋',
+        message:r.welcome_message||extra.welcome?.message||"Let's manage your studio today.",
+        duration:Number(r.welcome_duration_ms||extra.welcome?.duration||1400)
+      }
     };
   }
 
