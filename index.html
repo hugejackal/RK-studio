@@ -4929,9 +4929,8 @@ function customerTimeline(cid){
         if(tableName==='expenses'){if(payload.eventType==='DELETE')db.expenses=db.expenses.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.expenses,rowToExpense(payload.new))}
         if(tableName==='activity_logs'){if(payload.eventType==='DELETE')db.activityLog=db.activityLog.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.activityLog,rowToLog(payload.new))}
         localStorage.setItem(KEY,JSON.stringify(db));
-        const settingsPage=document.getElementById('settings');
-        const settingsVisible=!!settingsPage && !settingsPage.classList.contains('hidden');
-        if(!settingsVisible && typeof render==='function')render();
+        // Never rebuild the whole app from a background Realtime event.
+        // Re-rendering here can move focus, scroll and transient UI on every page.
       }catch(e){console.warn('Realtime update skipped',e)}
     }).subscribe();
     subscriptions.push(ch);
@@ -5648,6 +5647,30 @@ window.rkCloudSyncSettings=async function(){
     }
   });
   window.rkSettingsIsEditing=function(){return settingsEditing};
+})();
+</script>
+
+<script id="rk-v159-page-refresh">
+(function(){
+  window.rkRefreshCurrentPage=function(){
+    try{
+      const active=document.querySelector('.page:not(.hidden)');
+      if(!active)return;
+      const id=active.id;
+      const map={
+        dashboard:'renderDashboard',
+        customers:'renderCustomers',
+        shoots:'renderEvents',
+        packages:'renderPackages',
+        invoices:'renderInvoices',
+        management:'renderManagement',
+        activity:'renderActivity',
+        settings:'renderSettings'
+      };
+      const fn=map[id];
+      if(fn && typeof window[fn]==='function')window[fn]();
+    }catch(e){console.warn('RK current-page refresh skipped',e)}
+  };
 })();
 </script>
 </body>
