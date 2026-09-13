@@ -5702,9 +5702,11 @@ window.rkCloudSyncSettings=async function(){
   window.rkCloudSyncSettings=async function(){
     if(!isCloud())return {cloud:false};
     const s=db.settings||{};
+    // Settings saves must not depend on the roles table. The roles table has
+    // its own RLS policy and role-management code handles role synchronization.
+    // Mixing the two made a normal UI theme save fail with a roles RLS error.
     const {error}=await cloud().from('studio_settings').upsert(settingsToRow(s),{onConflict:'id'});
     if(error)throw error;
-    await syncRoles();
     return {cloud:true};
   };
 
