@@ -2560,7 +2560,24 @@ if(!i_customer.value)return alert('Please select a customer.');
 if(!i_date.value)return alert('Invoice date is required.');
 if(requestedPaid>total)return alert('Paid amount cannot be greater than the total bill.');
 let delta=requestedPaid-oldPaid;
-let obj={id:id||Date.now().toString(),number:i_no.value.trim()||'INV-'+Date.now(),date:i_date.value,customerId:i_customer.value,items:its,paid:requestedPaid,total};
+const selectedCustomer=(db.customers||[]).find(x=>String(x.id)===String(i_customer.value))||{};
+let obj={
+  id:id||Date.now().toString(),
+  number:i_no.value.trim()||'INV-'+Date.now(),
+  date:i_date.value,
+  customerId:i_customer.value,
+  customerSnapshot:{
+    id:String(selectedCustomer.id||i_customer.value),
+    name:selectedCustomer.name||'',
+    phone:selectedCustomer.phone||'',
+    email:selectedCustomer.email||'',
+    address:selectedCustomer.address||'',
+    venue:selectedCustomer.venue||''
+  },
+  items:its,
+  paid:requestedPaid,
+  total
+};
 if(id)db.invoices=db.invoices.map(x=>x.id==id?obj:x);else db.invoices.push(obj);
 if(delta!==0)db.payments.push({id:'pay'+Date.now(),date:i_date.value,amount:delta,invoiceId:obj.id,customerId:obj.customerId,method:delta>0?'Payment':'Adjustment',note:delta>0?'Payment received while updating bill':'Payment adjustment'});
 save();closeModal();render();openInvoiceView(obj.id);
@@ -2905,7 +2922,7 @@ ${studio}`;
     }
   };
 }
-function openInvoiceView(id){
+async function openInvoiceView(id){
   // Make View Invoice work when opened from P&L / Management / CRM.
   const invoicePage=document.getElementById('invoices');
   if(invoicePage){
@@ -2919,15 +2936,63 @@ function openInvoiceView(id){
   const i=(db.invoices||[]).find(x=>String(x.id)===String(id));
   if(!i){alert("Invoice not found.");return;}
   let c=(db.customers||[]).find(x=>String(x.id)===String(i.customerId))||null;
+
+  // Cloud-first repair: fetch the customer by the invoice FK if the local
+  // customer cache does not currently contain it.
+  if(!c && i.customerId && window.RK_SUPABASE &&
+     sessionStorage.getItem('rkStudioAuthProvider')==='supabase'){
+    try{
+      const {data:cr,error:ce}=await window.RK_SUPABASE
+        .from('customers')
+        .select('id,name,phone,email,address,notes,photo_path,custom_data')
+        .eq('id',String(i.customerId))
+        .maybeSingle();
+      if(!ce && cr){
+        const mapped=typeof rowToCustomer==='function' ? rowToCustomer(cr) : {
+          id:String(cr.id),
+          name:cr.name||'',
+          phone:cr.phone||'',
+          email:cr.email||'',
+          address:cr.address||'',
+          notes:cr.notes||'',
+          photo:'',
+          ...(cr.custom_data||{})
+        };
+        c=mapped;
+        const idx=(db.customers||[]).findIndex(x=>String(x.id)===String(mapped.id));
+        if(idx>=0)db.customers[idx]=mapped; else db.customers.push(mapped);
+        localStorage.setItem(KEY,JSON.stringify(db));
+      }
+    }catch(e){console.warn('Invoice customer cloud lookup failed:',e)}
+  }
+
   if(!c && i.customerSnapshot){
     c=Object.assign({},i.customerSnapshot);
     if(c.id && !(db.customers||[]).some(x=>String(x.id)===String(c.id))){
       db.customers.push(c);
     }
   }
+
+  // Last-resort compatibility for older local invoices whose customer id was
+  // not preserved during an earlier migration: infer only when exactly one
+  // customer is available.
+  if(!c && (db.customers||[]).length===1){
+    c=db.customers[0];
+  }
   c=c||{};
   const events=(db.events||[]).filter(e=>String(e.customerId)===String(i.customerId)).sort((a,b)=>(String(a.date)+String(a.time)).localeCompare(String(b.date)+String(b.time)));
   const payments=(db.payments||[]).filter(p=>String(p.invoiceId)===String(i.id)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(c?.name){
+    i.customerSnapshot={
+      id:String(c.id||i.customerId||''),
+      name:c.name||'',
+      phone:c.phone||'',
+      email:c.email||'',
+      address:c.address||'',
+      venue:c.venue||''
+    };
+    if(typeof save==='function')save();
+  }
   const subtotal=(i.items||[]).reduce((s,x)=>s+Number(x.qty||0)*Number(x.price||0),0);
   const balance=Math.max(0,Number(i.total||0)-Number(i.paid||0));
 
