@@ -4928,7 +4928,10 @@ function customerTimeline(cid){
         if(tableName==='payments'){if(payload.eventType==='DELETE')db.payments=db.payments.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.payments,rowToPayment(payload.new))}
         if(tableName==='expenses'){if(payload.eventType==='DELETE')db.expenses=db.expenses.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.expenses,rowToExpense(payload.new))}
         if(tableName==='activity_logs'){if(payload.eventType==='DELETE')db.activityLog=db.activityLog.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.activityLog,rowToLog(payload.new))}
-        localStorage.setItem(KEY,JSON.stringify(db)); if(typeof render==='function')render();
+        localStorage.setItem(KEY,JSON.stringify(db));
+        const settingsPage=document.getElementById('settings');
+        const settingsVisible=!!settingsPage && !settingsPage.classList.contains('hidden');
+        if(!settingsVisible && typeof render==='function')render();
       }catch(e){console.warn('Realtime update skipped',e)}
     }).subscribe();
     subscriptions.push(ch);
@@ -5475,7 +5478,8 @@ window.rkCloudSyncSettings=async function(){
         if(typeof applyUI==='function')applyUI();
       }
       await syncRoles();
-      if(typeof render==='function')render();
+      // Do not call render() here. Replacing the Settings DOM while the user
+      // is editing causes focus loss, scroll jumps and resets unsaved fields.
       return true;
     }catch(e){
       console.warn('Cloud governance hydration failed:',e);
@@ -5536,7 +5540,7 @@ window.rkCloudSyncSettings=async function(){
       }
     });
   }
-  setInterval(markPrimary,1800);
+
 
   window.rkCloudSyncRoles=syncRoles;
 })();
@@ -5562,7 +5566,7 @@ window.rkCloudSyncSettings=async function(){
     card.insertBefore(note,card.children[1]||null);
   }
   [400,1000,1800].forEach(ms=>setTimeout(add,ms));
-  setInterval(add,2200);
+
 })();
 </script>
 
@@ -5579,7 +5583,7 @@ window.rkCloudSyncSettings=async function(){
     card.insertBefore(note,card.children[1]||null);
   }
   [500,1200,2200].forEach(ms=>setTimeout(mount,ms));
-  setInterval(mount,2500);
+
 })();
 </script>
 
@@ -5620,6 +5624,30 @@ window.rkCloudSyncSettings=async function(){
     if(typeof render==='function')render();
     return {before:logs.length,after:out.length,removed:logs.length-out.length};
   };
+})();
+</script>
+
+<script id="rk-v158-settings-render-guard">
+(function(){
+  let settingsEditing=false;
+  function root(){return document.getElementById('settings')}
+  function mark(editing){settingsEditing=!!editing}
+  document.addEventListener('focusin',e=>{
+    const r=root();
+    if(r && r.contains(e.target) &&
+       (e.target.matches('input,textarea,select') || e.target.isContentEditable)) mark(true);
+  });
+  document.addEventListener('focusout',e=>{
+    const r=root();
+    if(r && r.contains(e.target)){
+      setTimeout(()=>{
+        const active=document.activeElement;
+        mark(!!(active && r.contains(active) &&
+          (active.matches('input,textarea,select') || active.isContentEditable)));
+      },0);
+    }
+  });
+  window.rkSettingsIsEditing=function(){return settingsEditing};
 })();
 </script>
 </body>
