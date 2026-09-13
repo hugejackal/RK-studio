@@ -5029,26 +5029,14 @@ function customerTimeline(cid){
 }
 </style>
 
-<style id="rk-v139-phase3">
-.rk-phase3-badge{font-size:11px;font-weight:800;padding:5px 9px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--muted)}
-body.theme-dark .rk-phase3-badge{color:#d9cbff}
+<style id="rk-v157-hide-legacy-cloud-badge">
+/* Legacy Storage + Activity Log badge is intentionally hidden.
+   The single global Cloud Sync status is the only persistent cloud indicator. */
+.rk-phase3-badge,
+[data-rk-phase3]{
+  display:none!important;
+}
 </style>
-<script id="rk-v139-phase3-mount">
-(function(){
-  function mount(){
-    const root=document.getElementById('settings'); if(!root)return;
-    let el=root.querySelector('[data-rk-phase3]');
-    if(!el){
-      el=document.createElement('div'); el.dataset.rkPhase3='1';
-      el.style.cssText='display:flex;justify-content:flex-end;margin:-4px 0 10px';
-      root.insertBefore(el,root.firstElementChild);
-    }
-    el.innerHTML='<span class="rk-phase3-badge">☁ Supabase · Storage + Activity Log ready</span>';
-  }
-  [250,800,1500].forEach(ms=>setTimeout(mount,ms));
-  setInterval(mount,1800);
-})();
-</script>
 
 <script id="rk-v140-cloud-migration">
 (function(){
