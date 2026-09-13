@@ -2918,7 +2918,14 @@ function openInvoiceView(id){
 
   const i=(db.invoices||[]).find(x=>String(x.id)===String(id));
   if(!i){alert("Invoice not found.");return;}
-  const c=(db.customers||[]).find(x=>String(x.id)===String(i.customerId))||{};
+  let c=(db.customers||[]).find(x=>String(x.id)===String(i.customerId))||null;
+  if(!c && i.customerSnapshot){
+    c=Object.assign({},i.customerSnapshot);
+    if(c.id && !(db.customers||[]).some(x=>String(x.id)===String(c.id))){
+      db.customers.push(c);
+    }
+  }
+  c=c||{};
   const events=(db.events||[]).filter(e=>String(e.customerId)===String(i.customerId)).sort((a,b)=>(String(a.date)+String(a.time)).localeCompare(String(b.date)+String(b.time)));
   const payments=(db.payments||[]).filter(p=>String(p.invoiceId)===String(i.id)).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   const subtotal=(i.items||[]).reduce((s,x)=>s+Number(x.qty||0)*Number(x.price||0),0);
@@ -4789,8 +4796,43 @@ function customerTimeline(cid){
   const rowToShoot=r=>({id:String(r.id),name:r.name||r.event_type||'Shoot',date:r.date||'',time:r.start_time||'',venue:r.location||'',customerId:r.customer_id?String(r.customer_id):'',status:r.status||'Planned',team:r.team||'',notes:r.notes||''});
   const packageToRow=p=>({id:String(p.id),name:String(p.name||''),price:Number(p.price||0),items:Array.isArray(p.items)?p.items:[],active:p.active!==false});
   const rowToPackage=r=>({id:String(r.id),name:r.name||'',price:Number(r.price||0),items:Array.isArray(r.items)?r.items:[],active:r.active!==false});
-  const invoiceToRow=i=>({id:String(i.id),customer_id:i.customerId?String(i.customerId):null,invoice_number:i.number||'',invoice_date:i.date||null,due_date:i.dueDate||null,status:i.status||null,subtotal:Number(i.subtotal||i.total||0),total:Number(i.total||0),paid:Number(i.paid||0),remaining:Math.max(0,Number(i.total||0)-Number(i.paid||0)),notes:i.notes||null,terms:i.terms||null,package_id:i.packageId?String(i.packageId):null,deliverables:i.deliverables||{},custom_data:{items:Array.isArray(i.items)?i.items:[]}});
-  const rowToInvoice=r=>{const x=r.custom_data||{};return {id:String(r.id),number:r.invoice_number||'',date:r.invoice_date||'',dueDate:r.due_date||'',customerId:r.customer_id?String(r.customer_id):'',items:Array.isArray(x.items)?x.items:[],paid:Number(r.paid||0),total:Number(r.total||0),subtotal:Number(r.subtotal||r.total||0),packageId:r.package_id?String(r.package_id):'',status:r.status||''}};
+  const invoiceToRow=i=>{
+    const c=(db.customers||[]).find(x=>String(x.id)===String(i.customerId));
+    return {
+      id:String(i.id),
+      customer_id:i.customerId?String(i.customerId):null,
+      invoice_number:i.number||'',
+      invoice_date:i.date||null,
+      due_date:i.dueDate||null,
+      status:i.status||null,
+      subtotal:Number(i.subtotal||i.total||0),
+      total:Number(i.total||0),
+      paid:Number(i.paid||0),
+      remaining:Math.max(0,Number(i.total||0)-Number(i.paid||0)),
+      notes:i.notes||null,
+      terms:i.terms||null,
+      package_id:i.packageId?String(i.packageId):null,
+      deliverables:i.deliverables||{},
+      custom_data:{
+        items:Array.isArray(i.items)?i.items:[],
+        customerSnapshot:c?{id:String(c.id),name:c.name||'',phone:c.phone||'',email:c.email||'',address:c.address||'',venue:c.venue||''}:i.customerSnapshot||null
+      }
+    };
+  };
+  const rowToInvoice=(r,fallback)=>{const x=r.custom_data||{};return {
+    id:String(r.id),
+    number:r.invoice_number||'',
+    date:r.invoice_date||'',
+    dueDate:r.due_date||'',
+    customerId:r.customer_id?String(r.customer_id):String(fallback?.customerId||''),
+    items:Array.isArray(x.items)?x.items:[],
+    paid:Number(r.paid||0),
+    total:Number(r.total||0),
+    subtotal:Number(r.subtotal||r.total||0),
+    packageId:r.package_id?String(r.package_id):String(fallback?.packageId||''),
+    status:r.status||'',
+    customerSnapshot:x.customerSnapshot||fallback?.customerSnapshot||null
+  }};
   const invoiceItemsToRows=i=>{
     const items=Array.isArray(i.items)?i.items:[];
     return items.map((x,idx)=>({
@@ -4872,7 +4914,10 @@ function customerTimeline(cid){
     if(table.name==='customers')return rows.map(rowToCustomer);
     if(table.name==='shoots')return rows.map(rowToShoot);
     if(table.name==='packages')return rows.map(rowToPackage);
-    if(table.name==='invoices')return rows.map(rowToInvoice);
+    if(table.name==='invoices'){
+      const localById=new Map((db.invoices||[]).map(x=>[String(x.id),x]));
+      return rows.map(r=>rowToInvoice(r,localById.get(String(r.id))));
+    }
     if(table.name==='payments')return rows.map(rowToPayment);
     if(table.name==='expenses')return rows.map(rowToExpense);
     if(table.name==='activity_logs')return rows.map(rowToLog);
