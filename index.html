@@ -3093,10 +3093,54 @@ async function openInvoiceView(id){
 </div>
 `;
 }
-function sendWhatsApp(invoiceId){
+async function sendWhatsApp(invoiceId){
   const i=db.invoices.find(x=>String(x.id)===String(invoiceId));
   if(!i){alert("Invoice not found.");return;}
-  const c=db.customers.find(x=>String(x.id)===String(i.customerId));
+
+  let c=db.customers.find(x=>String(x.id)===String(i.customerId))||null;
+
+  // Cloud-first lookup for migrated/remote invoices whose customer is not in
+  // the local cache (or whose phone field was not hydrated).
+  if((!c || !String(c.phone||'').trim()) &&
+     i.customerId &&
+     window.RK_SUPABASE &&
+     sessionStorage.getItem('rkStudioAuthProvider')==='supabase'){
+    try{
+      const {data:cr,error:ce}=await window.RK_SUPABASE
+        .from('customers')
+        .select('id,name,phone,email,address,notes,photo_path,custom_data')
+        .eq('id',String(i.customerId))
+        .maybeSingle();
+
+      if(!ce && cr){
+        const x=cr.custom_data||{};
+        const mapped={
+          id:String(cr.id),
+          name:cr.name||'',
+          phone:cr.phone||x.phone||'',
+          email:cr.email||x.email||'',
+          address:cr.address||'',
+          notes:cr.notes||'',
+          weddingDate:x.weddingDate||'',
+          venue:x.venue||'',
+          package:x.package||'',
+          photo:x.photo||''
+        };
+        c=mapped;
+        const idx=(db.customers||[]).findIndex(v=>String(v.id)===String(mapped.id));
+        if(idx>=0)db.customers[idx]=mapped; else db.customers.push(mapped);
+        localStorage.setItem(KEY,JSON.stringify(db));
+      }
+    }catch(e){
+      console.warn('WhatsApp customer lookup failed:',e);
+    }
+  }
+
+  // If the invoice contains a repaired customer snapshot, use it as fallback.
+  if((!c || !String(c.phone||'').trim()) && i.customerSnapshot){
+    c=Object.assign({},c||{},i.customerSnapshot);
+  }
+
   const name=c?.name||"Customer";
   const remaining=Math.max(0,Number(i.total||0)-Number(i.paid||0));
   const studio=db.settings?.studio||"RK Studio";
@@ -3131,6 +3175,7 @@ ${studio}`;
     </div>
   </div>`;
   document.body.appendChild(overlay);
+
   const ta=overlay.querySelector(".wa-message");
   ta.value=defaultMsg;
   ta.focus();
@@ -3139,11 +3184,15 @@ ${studio}`;
   overlay.querySelector(".wa-close").onclick=close;
   overlay.querySelector(".wa-cancel").onclick=close;
   overlay.addEventListener("click",e=>{if(e.target===overlay)close();});
+
   overlay.querySelector(".wa-send").onclick=()=>{
     const msg=ta.value.trim();
     if(!msg){alert("Please enter a message.");ta.focus();return;}
-    const phone=(c?.phone||"").replace(/\D/g,"");
-    if(!phone){alert("Customer phone number not available.");return;}
+    const phone=String(c?.phone||"").replace(/\D/g,"");
+    if(!phone){
+      alert("Customer WhatsApp number is missing. Please add the customer's phone number in CRM and save.");
+      return;
+    }
     const intl=phone.length===10?"91"+phone:phone;
     window.open("https://wa.me/"+intl+"?text="+encodeURIComponent(msg),"_blank");
     close();
