@@ -4950,31 +4950,84 @@ function customerTimeline(cid){
 .rk-cloud-status[data-state="local"]{color:#c67a1a}
 </style>
 
-<script id="rk-v138-cloud-status-mount">
+<script id="rk-v156-cloud-status-static">
 (function(){
-  function html(){
-    const s=window.RK_CLOUD_STATUS||'local';
-    const label=s==='synced'?'☁ Synced':s==='syncing'?'☁ Syncing…':'☁ Local';
-    return `<span data-rk-cloud-status data-state="${s}" class="rk-cloud-status">${label}</span>`;
-  }
   function mount(){
-    const root=document.getElementById('settings');
-    if(!root)return;
-    let top=root.querySelector(':scope > .rk-cloud-status-row');
-    if(!top){
-      top=document.createElement('div');
-      top.className='rk-cloud-status-row';
-      top.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--card);';
-      root.insertBefore(top,root.firstElementChild);
+    let box=document.getElementById('rkCloudStaticStatus');
+    if(!box){
+      box=document.createElement('div');
+      box.id='rkCloudStaticStatus';
+      box.innerHTML='<div class="rk-cloud-static-main"><span class="rk-cloud-static-label">☁ Cloud Sync</span><span class="rk-cloud-static-sep">·</span><span class="rk-cloud-static-provider">Supabase</span><span id="rkCloudStaticState" class="rk-cloud-static-state" data-state="local">☁ Local</span></div><div id="rkCloudStaticDetail" class="rk-cloud-static-detail" hidden></div>';
+      document.body.appendChild(box);
     }
-    top.innerHTML=`<span><b>Cloud Sync</b><span class="muted"> · Supabase</span></span>${html()}`;
-    root.dataset.rkCloudStatusMounted='1';
+    update(box);
+  }
+  function update(box){
+    const state=window.RK_CLOUD_STATUS||'local';
+    const msg=window.RK_CLOUD_STATUS_MESSAGE||'';
+    const stateEl=box.querySelector('#rkCloudStaticState');
+    const detail=box.querySelector('#rkCloudStaticDetail');
+    if(stateEl){
+      stateEl.textContent=state==='syncing'?'☁ Syncing…':state==='synced'?'☁ Synced':'☁ Local';
+      stateEl.dataset.state=state;
+      stateEl.title=msg;
+    }
+    const err=window.RK_CLOUD_LAST_ERROR||'';
+    if(detail){
+      if(err){
+        detail.hidden=false;
+        detail.textContent=err;
+      }else{
+        detail.hidden=true;
+        detail.textContent='';
+      }
+    }
   }
   document.addEventListener('DOMContentLoaded',mount);
-  [250,800,1500,2500].forEach(ms=>setTimeout(mount,ms));
-  setInterval(mount,1500);
+  [0,400,1000].forEach(ms=>setTimeout(mount,ms));
+  setInterval(function(){
+    const box=document.getElementById('rkCloudStaticStatus');
+    if(!box)mount(); else update(box);
+  },1000);
 })();
 </script>
+<style id="rk-v156-cloud-status-static-css">
+#rkCloudStaticStatus{
+  position:fixed;
+  top:12px;
+  right:18px;
+  z-index:120000;
+  max-width:min(360px,calc(100vw - 28px));
+  padding:9px 12px;
+  border:1px solid var(--border);
+  border-radius:999px;
+  background:color-mix(in srgb,var(--card) 94%,transparent);
+  backdrop-filter:blur(14px);
+  box-shadow:0 8px 28px rgba(0,0,0,.18);
+  font-size:11px;
+  line-height:1.25;
+  pointer-events:none;
+}
+.rk-cloud-static-main{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.rk-cloud-static-label{font-weight:900;color:var(--text)}
+.rk-cloud-static-provider{color:var(--muted)}
+.rk-cloud-static-sep{color:var(--muted)}
+.rk-cloud-static-state{font-weight:900}
+.rk-cloud-static-state[data-state="synced"]{color:#1c9b68}
+.rk-cloud-static-state[data-state="syncing"]{color:#b07b18}
+.rk-cloud-static-state[data-state="local"]{color:#c67a1a}
+.rk-cloud-static-detail{
+  margin-top:6px;
+  padding-top:6px;
+  border-top:1px solid var(--border);
+  color:#c67a1a;
+  white-space:normal;
+  word-break:break-word;
+}
+@media(max-width:700px){
+  #rkCloudStaticStatus{top:74px;right:10px;max-width:calc(100vw - 20px)}
+}
+</style>
 
 <style id="rk-v139-phase3">
 .rk-phase3-badge{font-size:11px;font-weight:800;padding:5px 9px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--muted)}
@@ -5559,29 +5612,7 @@ window.rkCloudSyncSettings=async function(){
 })();
 </script>
 
-<script id="rk-v152-cloud-diagnostic">
-(function(){
-  function mount(){
-    const root=document.getElementById('settings');if(!root)return;
-    let el=root.querySelector('[data-rk-cloud-last-error]');
-    if(!el){
-      el=document.createElement('div');
-      el.dataset.rkCloudLastError='1';
-      el.style.cssText='margin:8px 0 12px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:11px;color:#c67a1a;display:none;';
-      const status=root.querySelector('[data-rk-cloud-status]')?.closest('*');
-      root.insertBefore(el,root.firstElementChild);
-    }
-    if(window.RK_CLOUD_LAST_ERROR){
-      el.textContent='☁ Cloud sync detail: '+window.RK_CLOUD_LAST_ERROR;
-      el.style.display='block';
-    }else{
-      el.style.display='none';
-    }
-  }
-  [500,1200,2200].forEach(ms=>setTimeout(mount,ms));
-  setInterval(mount,1800);
-})();
-</script>
+
 
 <script id="rk-v153-activity-dedupe">
 (function(){
@@ -5765,3 +5796,7 @@ select option{
 }
 </style>
 
+
+<style id="rk-v156-cloud-status-cleanup">
+.rk-cloud-status-row{display:none!important}
+</style>
