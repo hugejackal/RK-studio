@@ -4955,11 +4955,22 @@ body.theme-dark .rk-phase3-badge{color:#d9cbff}
   }
   function toLog(x,uid){
     const legacyId=String(x.id||'');
+    // Old browser activity IDs are not guaranteed unique. Build the cloud UUID
+    // from the ID + event content so two different legacy rows never collapse
+    // into the same upsert key.
+    const fingerprint=[
+      legacyId,
+      x.at||x.createdAt||'',
+      x.type||'System',
+      x.action||'',
+      x.detail||'',
+      x.entityId||''
+    ].join('|');
     return {
-      id:rkDeterministicUuid(legacyId),
+      id:rkDeterministicUuid(fingerprint),
       type:x.type||'System',action:x.action||'',detail:x.detail||'',
       entity_type:null,entity_id:String(x.entityId||legacyId||''),
-      user_id:uid||null,created_at:x.at||new Date().toISOString()
+      user_id:uid||null,created_at:x.at||x.createdAt||new Date().toISOString()
     };
   }
 
@@ -5027,14 +5038,20 @@ body.theme-dark .rk-phase3-badge{color:#d9cbff}
 
     const rawLogs=Array.isArray(db.activityLog)?db.activityLog:[];
     if(rawLogs.length){
-      const activityRows=rawLogs.map(x=>{
+      const activityRows=[];
+      const seen=new Set();
+      for(const x of rawLogs){
         const base=toLog(x,uid);
-        return {
+        const row={
           ...base,
           id:safeUuid(base.id),
           user_id:uid&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(uid))?uid:null
         };
-      });
+        if(!seen.has(row.id)){
+          seen.add(row.id);
+          activityRows.push(row);
+        }
+      }
       const {error}=await cloud().from('activity_logs').upsert(activityRows,{onConflict:'id'});
       if(error)throw new Error('activity_logs: '+error.message);
     }
@@ -5446,6 +5463,27 @@ window.rkCloudSyncSettings=async function(){
   }
   [500,1200,2200].forEach(ms=>setTimeout(mount,ms));
   setInterval(mount,1800);
+})();
+</script>
+
+<script id="rk-v153-activity-dedupe">
+(function(){
+  window.rkDedupeLocalActivityLogs=function(){
+    const logs=Array.isArray(db.activityLog)?db.activityLog:[];
+    const out=[],seen=new Set();
+    for(const x of logs){
+      const key=[
+        x.id||'',x.at||x.createdAt||'',x.type||'System',
+        x.action||'',x.detail||'',x.entityId||''
+      ].join('|');
+      if(seen.has(key))continue;
+      seen.add(key);out.push(x);
+    }
+    db.activityLog=out;
+    localStorage.setItem(KEY,JSON.stringify(db));
+    if(typeof render==='function')render();
+    return {before:logs.length,after:out.length,removed:logs.length-out.length};
+  };
 })();
 </script>
 </body>
