@@ -4655,6 +4655,7 @@ function customerTimeline(cid){
     {name:'shoots',local:'events'},
     {name:'packages',local:'packages'},
     {name:'invoices',local:'invoices'},
+    {name:'invoice_items',local:'invoiceItems'},
     {name:'payments',local:'payments'},
     {name:'expenses',local:'expenses'},
     {name:'activity_logs',local:'activityLog'}
@@ -4673,12 +4674,26 @@ function customerTimeline(cid){
 
   const customerToRow=c=>({id:String(c.id),name:String(c.name||''),phone:c.phone||null,email:c.email||null,address:c.address||null,notes:c.notes||null,photo_path:null,custom_data:{weddingDate:c.weddingDate||'',venue:c.venue||'',package:c.package||'',photo:c.photo||''}});
   const rowToCustomer=r=>{const x=r.custom_data||{};return {id:String(r.id),name:r.name||'',phone:r.phone||'',email:r.email||'',address:r.address||'',notes:r.notes||'',weddingDate:x.weddingDate||'',venue:x.venue||'',package:x.package||'',photo:x.photo||''}};
-  const shootToRow=e=>({id:String(e.id),customer_id:e.customerId?String(e.customerId):null,name:e.name||'',event_type:e.name||'',date:e.date||null,start_time:e.time||null,location:e.venue||'',status:e.status||'Planned',team:e.team||'',requirements:'',notes:e.notes||'',custom_data:{}});
+  const shootToRow=e=>({id:String(e.id),customer_id:e.customerId?String(e.customerId):null,name:e.name||'',event_type:e.name||'',date:e.date||null,start_time:e.time||null,location:e.venue||'',status:e.status||'Planned',team:Array.isArray(e.team)?e.team:(e.team?String(e.team).split(/\s*,\s*/).filter(Boolean):[]),requirements:e.requirements||'',notes:e.notes||'',custom_data:{}});
   const rowToShoot=r=>({id:String(r.id),name:r.name||r.event_type||'Shoot',date:r.date||'',time:r.start_time||'',venue:r.location||'',customerId:r.customer_id?String(r.customer_id):'',status:r.status||'Planned',team:r.team||'',notes:r.notes||''});
   const packageToRow=p=>({id:String(p.id),name:String(p.name||''),price:Number(p.price||0),items:Array.isArray(p.items)?p.items:[],active:p.active!==false});
   const rowToPackage=r=>({id:String(r.id),name:r.name||'',price:Number(r.price||0),items:Array.isArray(r.items)?r.items:[],active:r.active!==false});
   const invoiceToRow=i=>({id:String(i.id),customer_id:i.customerId?String(i.customerId):null,invoice_number:i.number||'',invoice_date:i.date||null,due_date:i.dueDate||null,status:i.status||null,subtotal:Number(i.subtotal||i.total||0),total:Number(i.total||0),paid:Number(i.paid||0),remaining:Math.max(0,Number(i.total||0)-Number(i.paid||0)),notes:i.notes||null,terms:i.terms||null,package_id:i.packageId?String(i.packageId):null,deliverables:i.deliverables||{},custom_data:{items:Array.isArray(i.items)?i.items:[]}});
   const rowToInvoice=r=>{const x=r.custom_data||{};return {id:String(r.id),number:r.invoice_number||'',date:r.invoice_date||'',dueDate:r.due_date||'',customerId:r.customer_id?String(r.customer_id):'',items:Array.isArray(x.items)?x.items:[],paid:Number(r.paid||0),total:Number(r.total||0),subtotal:Number(r.subtotal||r.total||0),packageId:r.package_id?String(r.package_id):'',status:r.status||''}};
+  const invoiceItemsToRows=i=>{
+    const items=Array.isArray(i.items)?i.items:[];
+    return items.map((x,idx)=>({
+      id:String(x.id||`${i.id}-item-${idx+1}`),
+      invoice_id:String(i.id),
+      description:String(x.description||x.name||''),
+      quantity:Number(x.quantity||x.qty||1),
+      unit_price:Number(x.unit_price??x.rate??x.price??0),
+      amount:Number(x.amount??x.total??((Number(x.quantity||x.qty||1))*(Number(x.unit_price??x.rate??x.price??0)))),
+      sort_order:idx,
+      custom_data:x
+    }));
+  };
+  
   const paymentToRow=p=>({id:String(p.id),invoice_id:p.invoiceId?String(p.invoiceId):null,customer_id:p.customerId?String(p.customerId):null,date:p.date||null,amount:Number(p.amount||0),method:p.method||null,note:p.note||null,media_path:Array.isArray(p.media)?JSON.stringify(p.media.map(x=>x.path||x.url||'').filter(Boolean)):null,created_by:null});
   const rowToPayment=r=>{let media=[];try{media=r.media_path?JSON.parse(r.media_path):[]}catch(e){media=[]}return {id:String(r.id),date:r.date||'',amount:Number(r.amount||0),invoiceId:r.invoice_id?String(r.invoice_id):'',customerId:r.customer_id?String(r.customer_id):'',method:r.method||'Other',note:r.note||'Payment received',media:media.map(path=>({path}))}};
   const expenseToRow=e=>({id:String(e.id),customer_id:e.customerId?String(e.customerId):null,category:e.category||null,amount:Number(e.amount||0),date:e.date||null,description:e.description||'',created_by:null});
@@ -4707,6 +4722,7 @@ function customerTimeline(cid){
     if(table.name==='shoots')return (db.events||[]).map(shootToRow);
     if(table.name==='packages')return (db.packages||[]).map(packageToRow);
     if(table.name==='invoices')return (db.invoices||[]).map(invoiceToRow);
+    if(table.name==='invoice_items')return (db.invoices||[]).flatMap(invoiceItemsToRows);
     if(table.name==='payments')return (db.payments||[]).map(paymentToRow);
     if(table.name==='expenses')return (db.expenses||[]).map(expenseToRow);
     if(table.name==='activity_logs')return (db.activityLog||[]).map(logToRow);
@@ -4727,11 +4743,14 @@ function customerTimeline(cid){
   }
   async function push(table){
     let rows=localRows(table);
-    if(!rows.length)return;
+    if(!rows.length)return {count:0};
     const uid=await authUserId();
-    if((table.name==='payments'||table.name==='expenses'||table.name==='activity_logs')&&uid)rows=rows.map(x=>({...x,...(table.name==='activity_logs'?{user_id:uid}:{created_by:uid})}));
+    if((table.name==='payments'||table.name==='expenses'||table.name==='activity_logs')&&uid){
+      rows=rows.map(x=>({...x,...(table.name==='activity_logs'?{user_id:uid}:{created_by:uid})}));
+    }
     const {error}=await cloud().from(table.name).upsert(rows,{onConflict:'id'});
-    if(error)throw error;
+    if(error)throw new Error(`${table.name}: ${error.message||JSON.stringify(error)}`);
+    return {count:rows.length};
   }
   async function hydrateTable(table){
     const {data,error}=await cloud().from(table.name).select('*');
@@ -4752,15 +4771,36 @@ function customerTimeline(cid){
   async function hydrate(){
     if(!cloudSession())return false;
     status('syncing','Loading cloud data…');
-    for(const table of CLOUD_TABLES)await hydrateTable(table);
+    for(const table of CLOUD_TABLES){
+      try{await hydrateTable(table)}
+      catch(e){
+        const msg=e.message||String(e);
+        console.error('Cloud hydrate failed for',table.name,e);
+        status('local',`Cloud load failed: ${msg}`);
+        window.RK_CLOUD_LAST_ERROR=msg;
+        return false;
+      }
+    }
     localStorage.setItem(KEY,JSON.stringify(db)); if(typeof render==='function')render();
-    status('synced','Cloud data loaded.'); return true;
+    status('synced','Cloud data loaded.'); window.RK_CLOUD_LAST_ERROR=''; return true;
   }
   async function syncNow(){
     if(running||!cloudSession())return; running=true;
-    try{status('syncing','Syncing changes…');for(const table of CLOUD_TABLES)await push(table);status('synced','Cloud sync complete.')}
-    catch(e){console.error('Cloud sync failed:',e);status('local','Cloud sync failed; local data is still safe. Check the browser console for details.')}
-    finally{running=false}
+    try{
+      status('syncing','Syncing changes…');
+      const failures=[];
+      for(const table of CLOUD_TABLES){
+        try{await push(table)}
+        catch(e){console.error('Cloud sync failed for',table.name,e);failures.push(e.message||String(e));}
+      }
+      if(failures.length){
+        status('local',`Cloud sync needs attention: ${failures[0]}`);
+        window.RK_CLOUD_LAST_ERROR=failures.join(' | ');
+      }else{
+        status('synced','Cloud sync complete.');
+        window.RK_CLOUD_LAST_ERROR='';
+      }
+    }finally{running=false}
   }
   window.rkCloudScheduleSave=()=>{if(!cloudSession())return;clearTimeout(syncTimer);syncTimer=setTimeout(syncNow,450)};
   window.rkCloudSyncPhase3=syncNow; window.rkCloudHydratePhase3=hydrate;
@@ -5382,6 +5422,30 @@ window.rkCloudSyncSettings=async function(){
       };
     }catch(e){return {ok:false,error:e?.message||String(e)}}
   };
+})();
+</script>
+
+<script id="rk-v152-cloud-diagnostic">
+(function(){
+  function mount(){
+    const root=document.getElementById('settings');if(!root)return;
+    let el=root.querySelector('[data-rk-cloud-last-error]');
+    if(!el){
+      el=document.createElement('div');
+      el.dataset.rkCloudLastError='1';
+      el.style.cssText='margin:8px 0 12px;padding:9px 12px;border:1px solid var(--border);border-radius:9px;font-size:11px;color:#c67a1a;display:none;';
+      const status=root.querySelector('[data-rk-cloud-status]')?.closest('*');
+      root.insertBefore(el,root.firstElementChild);
+    }
+    if(window.RK_CLOUD_LAST_ERROR){
+      el.textContent='☁ Cloud sync detail: '+window.RK_CLOUD_LAST_ERROR;
+      el.style.display='block';
+    }else{
+      el.style.display='none';
+    }
+  }
+  [500,1200,2200].forEach(ms=>setTimeout(mount,ms));
+  setInterval(mount,1800);
 })();
 </script>
 </body>
