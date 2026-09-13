@@ -3773,7 +3773,80 @@ async function changePassword(){
   alert('Password changed successfully.');
 }
 
-const savedUid=sessionStorage.getItem('rkStudioUserId'); if(sessionStorage.getItem('rkStudioAuthenticated')==='1' && savedUid){currentUser=(db.users||[]).find(u=>u.id===savedUid && u.active!==false)||null;} if(currentUser){showApp();}else{sessionStorage.removeItem('rkStudioAuthenticated');sessionStorage.removeItem('rkStudioUserId');applyUI();showLogin();}
+async function restoreCloudSession(){
+  try{
+    if(!window.RK_SUPABASE)return false;
+    const {data,error}=await window.RK_SUPABASE.auth.getSession();
+    if(error||!data?.session?.user)return false;
+
+    const user=data.session.user;
+    const {data:profile,error:profileError}=await window.RK_SUPABASE
+      .from('profiles')
+      .select('id,username,name,role,active,phone,email,avatar_url')
+      .eq('id',user.id)
+      .maybeSingle();
+
+    if(profileError)console.warn('Cloud profile restore failed:',profileError);
+    if(profile?.active===false){
+      await window.RK_SUPABASE.auth.signOut();
+      return false;
+    }
+
+    const loginEmail=user.email||'';
+    const localUser=(db.users||[]).find(u=>
+      String(u.id)===String(user.id) ||
+      String(u.email||'').toLowerCase()===loginEmail.toLowerCase() ||
+      String(u.username||'').toLowerCase()===String(profile?.username||'').toLowerCase()
+    );
+
+    currentUser=Object.assign({},localUser||{},{
+      id:user.id,
+      username:profile?.username||localUser?.username||loginEmail.split('@')[0],
+      name:profile?.name||localUser?.name||loginEmail.split('@')[0],
+      role:profile?.role||localUser?.role||'photographer',
+      active:profile?.active!==false,
+      email:profile?.email||loginEmail,
+      phone:profile?.phone||localUser?.phone||'',
+      avatar_url:profile?.avatar_url||localUser?.avatar_url||''
+    });
+
+    sessionStorage.setItem('rkStudioUserId',user.id);
+    sessionStorage.setItem('rkStudioAuthenticated','1');
+    sessionStorage.setItem('rkStudioAuthProvider','supabase');
+
+    // Refresh cloud data before showing the app, but don't log the user out
+    // if one optional sync table is temporarily unavailable.
+    try{ await window.rkCloudHydratePhase2?.(); }catch(e){ console.warn('Cloud hydrate on restore skipped:',e); }
+
+    showApp();
+    return true;
+  }catch(e){
+    console.warn('Supabase session restore skipped:',e);
+    return false;
+  }
+}
+
+(async function bootstrapAuth(){
+  const provider=sessionStorage.getItem('rkStudioAuthProvider');
+  if(provider==='supabase'){
+    const restored=await restoreCloudSession();
+    if(restored)return;
+  }
+
+  const savedUid=sessionStorage.getItem('rkStudioUserId');
+  if(sessionStorage.getItem('rkStudioAuthenticated')==='1' && savedUid){
+    currentUser=(db.users||[]).find(u=>String(u.id)===String(savedUid) && u.active!==false)||null;
+  }
+
+  if(currentUser)showApp();
+  else{
+    sessionStorage.removeItem('rkStudioAuthenticated');
+    sessionStorage.removeItem('rkStudioUserId');
+    sessionStorage.removeItem('rkStudioAuthProvider');
+    applyUI();
+    showLogin();
+  }
+})();
 
 function shareTermsWhatsApp(termsText){
   const studio = (db.settings && db.settings.studioName) || "RK Studio";
