@@ -2375,7 +2375,7 @@ function savePackage(id){
   if(id)db.packages=db.packages.map(x=>x.id==id?obj:x);else db.packages.push(obj);
   save();closeModal();render();
 }
-function deletePackage(id){ if(!actionGuard('packageManage'))return;if(confirm('Delete this package?')){db.packages=db.packages.filter(p=>p.id!=id);save();render()}}
+function deletePackage(id){if(!actionGuard('packageManage'))return;if(!confirm('Delete this package?'))return;rkMarkCloudDeleted('packages',id);db.packages=db.packages.filter(p=>p.id!=id);save();render();rkCloudDeleteReport(rkCloudDelete('packages',id).then(()=>rkClearCloudDeleted('packages',id)));}
 function usePackageInInvoice(id){let p=db.packages.find(x=>x.id==id);if(p)openInvoice(null,'',p)}
 function sharePackage(id){
   let p=db.packages.find(x=>x.id==id);if(!p)return;
@@ -2517,7 +2517,52 @@ let q=(document.getElementById('custSearch')?.value||'').toLowerCase();
 let arr=db.customers.filter(c=>(c.name+' '+c.phone+' '+c.venue).toLowerCase().includes(q));
 customerTable.innerHTML=`<table class="customer-table"><tr><th>Customer</th><th>WhatsApp</th><th>Wedding</th><th>Venue</th><th>Package</th><th>Actions</th></tr>${arr.map(c=>`<tr><td><div class="customer-cell">${customerAvatar(c)}<b>${esc(c.name)}</b></div></td><td>${esc(c.phone)}</td><td>${c.weddingDate||'—'}</td><td>${esc(c.venue)}</td><td>${esc(c.package)||'—'}</td><td><div class="actions"><button class="small" onclick="openCustomer('${c.id}')">Edit</button><button class="small" onclick="renderCustomerCRM('${c.id}')">CRM</button><button class="small" onclick="openEvent(null,'${c.id}')">+ Shoot</button><button class="small" onclick="openInvoice(null,'${c.id}')">+ Bill</button><button class="small danger" onclick="deleteCustomer('${c.id}')">Delete</button></div></td></tr>`).join('')||'<tr><td colspan="6" class="empty">No customers yet</td></tr>'}</table>`;
 }
-function deleteCustomer(id){ if(!actionGuard('customerDelete'))return;if(confirm('Delete this customer?')){let invIds=new Set(db.invoices.filter(i=>i.customerId==id).map(i=>i.id));db.customers=db.customers.filter(c=>c.id!=id);db.events=db.events.filter(e=>e.customerId!=id);db.invoices=db.invoices.filter(i=>i.customerId!=id);db.payments=db.payments.filter(p=>!invIds.has(p.invoiceId));delete db.expenseCategories[id];delete db.expenseCategoryStatus[id];db.expenses=db.expenses.filter(e=>e.customerId!=id);save();render()}}
+window.rkCloudDeleteTombstones=window.rkCloudDeleteTombstones||{};
+function rkMarkCloudDeleted(table,id){window.rkCloudDeleteTombstones[`${table}:${String(id)}`]=Date.now();}
+function rkIsCloudDeleted(table,id){return !!window.rkCloudDeleteTombstones?.[`${table}:${String(id)}`];}
+function rkClearCloudDeleted(table,id){delete window.rkCloudDeleteTombstones[`${table}:${String(id)}`];}
+async function rkCloudDelete(table,id){
+  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return;
+  const {error}=await window.RK_SUPABASE.from(table).delete().eq('id',String(id));
+  if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
+}
+async function rkCloudDeleteWhere(table,column,value){
+  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return;
+  const {error}=await window.RK_SUPABASE.from(table).delete().eq(column,String(value));
+  if(error)throw new Error(`${table}.${column}: ${error.message||JSON.stringify(error)}`);
+}
+function rkCloudDeleteReport(p){
+  Promise.resolve(p).catch(e=>{
+    window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
+    console.warn('Cloud delete failed:',e);
+    if(typeof rkToast==='function')rkToast('Deleted locally · cloud delete failed','error');
+  });
+}
+
+function deleteCustomer(id){
+  if(!actionGuard('customerDelete'))return;
+  if(!confirm('Delete this customer?'))return;
+  const invIds=[...new Set(db.invoices.filter(i=>i.customerId==id).map(i=>String(i.id)))];
+  const shootIds=db.events.filter(e=>e.customerId==id).map(e=>String(e.id));
+  const expenseIds=db.expenses.filter(e=>e.customerId==id).map(e=>String(e.id));
+  rkMarkCloudDeleted('customers',id);shootIds.forEach(x=>rkMarkCloudDeleted('shoots',x));expenseIds.forEach(x=>rkMarkCloudDeleted('expenses',x));invIds.forEach(x=>rkMarkCloudDeleted('invoices',x));
+  db.customers=db.customers.filter(c=>c.id!=id);
+  db.events=db.events.filter(e=>e.customerId!=id);
+  db.invoices=db.invoices.filter(i=>i.customerId!=id);
+  db.payments=db.payments.filter(p=>!invIds.includes(String(p.invoiceId)));
+  delete db.expenseCategories[id];delete db.expenseCategoryStatus[id];
+  db.expenses=db.expenses.filter(e=>e.customerId!=id);
+  save();render();
+  if(window.RK_SUPABASE&&sessionStorage.getItem('rkStudioAuthProvider')==='supabase'){
+    rkCloudDeleteReport((async()=>{
+      for(const sid of shootIds)await rkCloudDelete('shoots',sid);
+      for(const eid of expenseIds)await rkCloudDelete('expenses',eid);
+      for(const iid of invIds){await rkCloudDeleteWhere('payments','invoice_id',iid);await rkCloudDeleteWhere('invoice_items','invoice_id',iid);await rkCloudDelete('invoices',iid);}
+      await rkCloudDelete('customers',id);
+      rkClearCloudDeleted('customers',id);shootIds.forEach(x=>rkClearCloudDeleted('shoots',x));expenseIds.forEach(x=>rkClearCloudDeleted('expenses',x));invIds.forEach(x=>rkClearCloudDeleted('invoices',x));
+    })());
+  }
+}
 function openEvent(id=null,cid=''){ if(!actionGuard(id?'shootEdit':'shootCreate'))return;
 let e=db.events.find(x=>x.id==id)||{name:'Wedding',date:'',time:'',venue:'',customerId:cid,status:'Planned',team:'',notes:''};
 modal(id?'Edit Shoot':'New Shoot',`<div class="formgrid">
@@ -2539,7 +2584,7 @@ let arr=[...db.events].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))
 events.innerHTML=`<div class="top"><div><h1>Shoot Planner</h1><div class="sub">Plan Haldi, Mehndi, Wedding, Reception and all other shoots</div></div><button class="btn" onclick="openEvent()">+ New Shoot</button></div>
 <div class="card tablewrap"><table><tr><th>Date</th><th>Event</th><th>Customer</th><th>Venue</th><th>Team</th><th>Status</th><th></th></tr>${arr.map(e=>`<tr><td>${e.date}<br><span class="muted">${e.time||''}</span></td><td><b>${esc(e.name)}</b></td><td>${esc(customerName(e.customerId))}</td><td>${esc(e.venue)}</td><td>${esc(e.team)}</td><td><span class="pill">${e.status}</span></td><td><button class="small" onclick="openEvent('${e.id}')">Edit</button> <button class="small danger" onclick="deleteEvent('${e.id}')">Delete</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No shoots planned</td></tr>'}</table></div>`;
 }
-function deleteEvent(id){ if(!actionGuard('shootDelete'))return;if(confirm('Delete this shoot?')){db.events=db.events.filter(e=>e.id!=id);save();render()}}
+function deleteEvent(id){if(!actionGuard('shootDelete'))return;if(!confirm('Delete this shoot?'))return;rkMarkCloudDeleted('shoots',id);db.events=db.events.filter(e=>e.id!=id);save();render();rkCloudDeleteReport(rkCloudDelete('shoots',id).then(()=>rkClearCloudDeleted('shoots',id)));}
 function openInvoice(id=null,cid='',packagePreset=null){ if(!actionGuard(id?'invoiceEdit':'invoiceCreate'))return;
 let i=db.invoices.find(x=>x.id==id)||{number:'INV-'+new Date().getFullYear()+'-'+String(db.invoices.length+1).padStart(3,'0'),customerId:cid,date:new Date().toISOString().slice(0,10),dueDate:'',items:packagePreset?[{desc:packagePreset.name+' Package',qty:1,price:packagePreset.price}]:[{desc:'Photography Package',qty:1,price:0}],packageId:packagePreset?.id||'',paid:0,subtotal:0};
 modal(id?'Edit Invoice':'New Invoice',`<div style="margin-bottom:14px"><label class="label">Quick Add Package</label><select onchange="if(this.value){let p=db.packages.find(x=>x.id==this.value); if(p){let r=document.querySelectorAll('#items .formgrid')[0]; if(r){r.querySelector('.idesc').value=p.name+' Package';r.querySelector('.iprice').value=p.price;}renderInvoicePackageInfo(this.value);}else{renderInvoicePackageInfo('')}}"' ><option value="">Select package...</option>${db.packages.map(p=>`<option value="${p.id}">${esc(p.name)} — ${money(p.price)}</option>`).join()}</select>
@@ -2734,7 +2779,7 @@ function renderInvoices(){
   <div class="card invoice-desktop-table"><div class="tablewrap"><table><tr><th>Invoice</th><th>Customer</th><th>Date</th><th>Total</th><th>Paid</th><th>Balance</th><th>Due / Status</th><th>Actions</th></tr>${desktopRows||'<tr><td colspan="8" class="empty">No invoices yet</td></tr>'}</table></div></div>
   <div class="invoice-mobile-list">${mobileCards||'<div class="card empty">No invoices yet</div>'}</div>`;
 }
-function deleteInvoice(id){ if(!actionGuard('invoiceDelete'))return;if(confirm('Delete this invoice?')){db.invoices=db.invoices.filter(i=>i.id!=id);db.payments=db.payments.filter(p=>p.invoiceId!=id);save();render()}}
+function deleteInvoice(id){if(!actionGuard('invoiceDelete'))return;if(!confirm('Delete this invoice?'))return;rkMarkCloudDeleted('invoices',id);db.invoices=db.invoices.filter(i=>i.id!=id);db.payments=db.payments.filter(p=>p.invoiceId!=id);save();render();if(window.RK_SUPABASE&&sessionStorage.getItem('rkStudioAuthProvider')==='supabase'){rkCloudDeleteReport((async()=>{await rkCloudDeleteWhere('payments','invoice_id',id);await rkCloudDeleteWhere('invoice_items','invoice_id',id);await rkCloudDelete('invoices',id);rkClearCloudDeleted('invoices',id)})());}}
 function showCustomerSummary(cid){
 let c=db.customers.find(x=>x.id==cid)||{};
 let inv=db.invoices.filter(i=>i.customerId==cid);
@@ -3236,7 +3281,7 @@ function saveExpense(id){
   if(!obj.date)return alert('Expense date is required.'); if(obj.amount<=0)return alert('Enter a valid expense amount.');
   if(id)db.expenses=db.expenses.map(x=>x.id==id?obj:x);else db.expenses.push(obj);save();closeModal();render();
 }
-function deleteExpense(id){ if(!actionGuard('expenseManage'))return;if(confirm('Delete this expense?')){db.expenses=db.expenses.filter(x=>x.id!=id);save();render();}}
+function deleteExpense(id){if(!actionGuard('expenseManage'))return;if(!confirm('Delete this expense?'))return;rkMarkCloudDeleted('expenses',id);db.expenses=db.expenses.filter(x=>x.id!=id);save();render();rkCloudDeleteReport(rkCloudDelete('expenses',id).then(()=>rkClearCloudDeleted('expenses',id)));}
 function renderManagement(){
   const totalRevenue=db.invoices.reduce((s,i)=>s+Number(i.total||0),0);
   const totalCollected=db.invoices.reduce((s,i)=>s+Number(i.paid||0),0);
@@ -5060,13 +5105,14 @@ function customerTimeline(cid){
   const rowToLog=r=>({id:String(r.id),type:r.type||'System',action:r.action||'',detail:r.detail||'',entityId:r.entity_id||'',userId:r.user_id||'',user:r.user||'Cloud',at:r.created_at||new Date().toISOString()});
 
   function localRows(table){
-    if(table.name==='customers')return (db.customers||[]).map(customerToRow);
-    if(table.name==='shoots')return (db.events||[]).map(shootToRow);
-    if(table.name==='packages')return (db.packages||[]).map(packageToRow);
-    if(table.name==='invoices')return (db.invoices||[]).map(invoiceToRow);
+    const notDeleted=(name,rows)=>rows.filter(r=>!rkIsCloudDeleted(name,r.id));
+    if(table.name==='customers')return notDeleted('customers',(db.customers||[]).map(customerToRow));
+    if(table.name==='shoots')return notDeleted('shoots',(db.events||[]).map(shootToRow));
+    if(table.name==='packages')return notDeleted('packages',(db.packages||[]).map(packageToRow));
+    if(table.name==='invoices')return notDeleted('invoices',(db.invoices||[]).map(invoiceToRow));
     if(table.name==='invoice_items')return (db.invoices||[]).flatMap(invoiceItemsToRows);
-    if(table.name==='payments')return (db.payments||[]).map(paymentToRow);
-    if(table.name==='expenses')return (db.expenses||[]).map(expenseToRow);
+    if(table.name==='payments')return notDeleted('payments',(db.payments||[]).map(paymentToRow));
+    if(table.name==='expenses')return notDeleted('expenses',(db.expenses||[]).map(expenseToRow));
     if(table.name==='activity_logs'){
       const rows=[];
       const seen=new Set();
