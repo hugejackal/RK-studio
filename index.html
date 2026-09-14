@@ -4792,12 +4792,58 @@ async function rkCreateInvoicePDFBlob(invoiceId){
       ctx.fillRect(0,0,slice.width,slice.height);
       ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
 
-      const img=slice.toDataURL('image/jpeg',0.96);
+      const img=slice.toDataURL('image/png');
       const mmH=(slice.height*usableW)/canvas.width;
-      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
+      pdf.addImage(img,'PNG',margin,margin,usableW,mmH,undefined,'FAST');
 
       y=cut;
     }
+  }
+
+  function injectPdfReadability(root){
+    const style=document.createElement('style');
+    style.textContent=`
+      .invoice,.invoice *,.rk-pdf-block,.rk-pdf-block *{
+        opacity:1!important;
+        text-shadow:none!important;
+        -webkit-print-color-adjust:exact!important;
+        print-color-adjust:exact!important;
+      }
+      .invoice{color:#171717!important;background:#fff!important;}
+      .invoice h1,.invoice h2,.invoice h3,.invoice h4,
+      .invoice strong,.invoice b,.invoice .total,
+      .invoice-customer-label,.invoice-customer-name,
+      .invoice-package-title,.invoice-line-service-name{
+        color:#171717!important;
+      }
+      .invoice .muted,
+      .invoice .invoice-customer-line,
+      .invoice .invoice-customer-details,
+      .invoice .invoice-package-services,
+      .invoice .invoice-line-services,
+      .invoice .invoice-terms-intro{
+        color:#444!important;
+      }
+      .invoice table th,.invoice table td{
+        color:#222!important;
+        border-color:#b8b8b8!important;
+      }
+      .invoice .payment-structure,
+      .invoice .payment-structure *,
+      .invoice .invoice-terms,
+      .invoice .invoice-terms *{
+        color:#222!important;
+      }
+      .invoice .payment-structure .muted,
+      .invoice .invoice-terms .muted{
+        color:#555!important;
+      }
+      .invoice .right,
+      .invoice .right *{
+        color:#171717!important;
+      }
+    `;
+    root.prepend(style);
   }
 
   async function renderNode(node){
@@ -4805,14 +4851,17 @@ async function rkCreateInvoicePDFBlob(invoiceId){
     const clone=node.cloneNode(true);
     cleanup(clone);
     clone.style.cssText=[
-      'width:794px','max-width:794px','background:#fff','color:#111',
-      'margin:0','padding:0','box-sizing:border-box'
+      'width:794px','max-width:794px','background:#fff','color:#171717',
+      'margin:0','padding:0','box-sizing:border-box','opacity:1'
     ].join(';');
+    injectPdfReadability(clone);
     holder.appendChild(clone);
     try{
       const canvas=await html2canvas(clone,{
-        scale:2,useCORS:true,backgroundColor:'#fff',
-        logging:false,windowWidth:794,imageTimeout:15000
+        scale:3,useCORS:true,backgroundColor:'#fff',
+        logging:false,windowWidth:794,imageTimeout:15000,
+        letterRendering:true,
+        allowTaint:false
       });
       addCanvasPages(canvas,getSafeCuts(clone));
     }finally{
@@ -6353,6 +6402,27 @@ window.rkCloudSyncSettings=async function(){
 })();
 </script>
 </html>
+
+<style id="rk-v171-pdf-print-readability">
+@media print{
+  .invoice,
+  .invoice *{
+    opacity:1!important;
+    -webkit-print-color-adjust:exact!important;
+    print-color-adjust:exact!important;
+  }
+  .invoice .muted,
+  .invoice .invoice-package-services,
+  .invoice .invoice-line-services,
+  .invoice .invoice-terms-intro{
+    color:#444!important;
+  }
+  .invoice table th,
+  .invoice table td{
+    color:#222!important;
+  }
+}
+</style>
 <style id="v90-pdf-smart-pagination">
 @media print{
   .invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,
