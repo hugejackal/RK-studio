@@ -3967,6 +3967,17 @@ function showApp(){
   applyUI();
   render();
 }
+async function rkWaitForCloudEngine(timeoutMs=12000){
+  if(!window.RK_DEPLOYED_MODE) return true;
+  const start=Date.now();
+  while(!(typeof window.rkCloudHydratePhase3==='function')){
+    if(Date.now()-start>timeoutMs) return false;
+    await new Promise(r=>setTimeout(r,25));
+  }
+  const ok=await window.rkCloudHydratePhase3();
+  if(ok && typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
+  return !!ok;
+}
 async function passwordHash(value){
   const data=new TextEncoder().encode(String(value));
   const digest=await crypto.subtle.digest('SHA-256',data);
@@ -4015,7 +4026,15 @@ async function login(ev){
           sessionStorage.setItem('rkStudioAuthProvider','supabase');
           document.getElementById('loginUsername').value='';
           document.getElementById('loginPassword').value='';
-          if(window.rkCloudHydratePhase2) await window.rkCloudHydratePhase2();
+          if(window.RK_DEPLOYED_MODE){
+            const cloudReady=await rkWaitForCloudEngine();
+            if(!cloudReady){
+              loginError.textContent='Cloud data could not be loaded. Please try again.';
+              return;
+            }
+          }else if(window.rkCloudHydratePhase2){
+            await window.rkCloudHydratePhase2();
+          }
           showWelcomeThenApp();
           return;
         }
@@ -4125,9 +4144,13 @@ async function restoreCloudSession(){
     sessionStorage.setItem('rkStudioAuthenticated','1');
     sessionStorage.setItem('rkStudioAuthProvider','supabase');
 
-    // Refresh cloud data before showing the app, but don't log the user out
-    // if one optional sync table is temporarily unavailable.
-    try{ await window.rkCloudHydratePhase2?.(); }catch(e){ console.warn('Cloud hydrate on restore skipped:',e); }
+    // Always hydrate Supabase before showing the app on deployed builds.
+    if(window.RK_DEPLOYED_MODE){
+      const cloudReady=await rkWaitForCloudEngine();
+      if(!cloudReady) return false;
+    }else{
+      try{ await window.rkCloudHydratePhase2?.(); }catch(e){ console.warn('Cloud hydrate on restore skipped:',e); }
+    }
 
     showApp();
     return true;
@@ -4137,7 +4160,7 @@ async function restoreCloudSession(){
   }
 }
 
-(async function bootstrapAuth(){
+window.addEventListener('DOMContentLoaded',async function bootstrapAuth(){
   const provider=sessionStorage.getItem('rkStudioAuthProvider');
   if(provider==='supabase'){
     const restored=await restoreCloudSession();
@@ -4157,7 +4180,7 @@ async function restoreCloudSession(){
     applyUI();
     showLogin();
   }
-})();
+},{once:true});
 
 function shareTermsWhatsApp(termsText){
   const studio = (db.settings && db.settings.studioName) || "RK Studio";
@@ -6182,6 +6205,7 @@ window.rkCloudSyncSettings=async function(){
   window.rkCloudScheduleSave=schedule;
   window.rkCloudSyncPhase3=pushChanged;
   window.rkCloudHydratePhase3=hydrate;
+  window.rkEnsureCloudReady=rkWaitForCloudEngine;
 
   function mergeRealtime(table,payload){
     const localName=TABLES.find(x=>x[0]===table)?.[1];
@@ -6204,7 +6228,7 @@ window.rkCloudSyncSettings=async function(){
   function startRealtime(){channels.forEach(c=>{try{cloud().removeChannel(c)}catch(e){}});channels=TABLES.map(x=>subscribe(x[0])).filter(Boolean);channels.push(subscribe('studio_settings'))}
   window.rkCloudStartRealtimePhase3=startRealtime;
 
-  if(isCloud())setTimeout(async()=>{const ok=await hydrate();if(ok)startRealtime();},0);
+  if(isCloud())(async()=>{const ok=await hydrate();if(ok)startRealtime();})();
 })();
 </script>
 </html>
