@@ -4985,38 +4985,6 @@ function customerTimeline(cid){
 }
 
 </script>
-<script>
-(function(){
-  const AUTO_LOGOUT_MS=5*60*1000;
-  let timer=null,lastActivity=Date.now();
-  function loggedIn(){
-    try{
-      return sessionStorage.getItem("rkStudioAuthenticated")==="1" ||
-             !!sessionStorage.getItem("rkStudioUserId") ||
-             !!localStorage.getItem("rkStudioLoggedIn") ||
-             !!localStorage.getItem("shaadiStudio_loggedIn");
-    }catch(e){return false;}
-  }
-  function reset(){
-    lastActivity=Date.now();
-    clearTimeout(timer);
-    if(!loggedIn()) return;
-    timer=setTimeout(function(){
-      if(Date.now()-lastActivity>=AUTO_LOGOUT_MS){
-        if(typeof logout==="function") logout();
-        else if(typeof showLogin==="function") showLogin();
-        else location.reload();
-      }else reset();
-    },AUTO_LOGOUT_MS+250);
-  }
-  ["click","pointerdown","keydown","touchstart","scroll"].forEach(function(ev){
-    document.addEventListener(ev,reset,{passive:true});
-  });
-  document.addEventListener("visibilitychange",function(){if(!document.hidden)reset();});
-  window.rkResetAutoLogout=reset;
-  setTimeout(reset,500);
-})();
-</script>
 
 <script>const um=document.getElementById('userManagementCard'); if(um&&typeof hasPermission==='function')um.style.display=hasPermission('userManagement')?'block':'none';</script>
 <style id="v32-final-mobile-modal-safe-area">
@@ -6053,7 +6021,7 @@ window.rkCloudSyncSettings=async function(){
     ['activity_logs','activityLog']
   ];
   let baseline={};
-  let syncTimer=null, syncing=false, booted=false;
+  let syncTimer=null, syncing=false;
   let channels=[];
 
   const safeArray=v=>Array.isArray(v)?v:[];
@@ -6133,7 +6101,6 @@ window.rkCloudSyncSettings=async function(){
     baseline={};
     TABLES.forEach(([table,local])=>baseline[table]=new Map(localArray(local).map(x=>[String(x.id),comparable(table,x)])));
     baseline.studio_settings=JSON.stringify(db.settings||{});
-    booted=true;
   }
   async function authUserId(){try{return (await cloud().auth.getUser()).data?.user?.id||null}catch(e){return null}}
   async function getSettingsRow(){const q=await cloud().from('studio_settings').select('*').eq('id',true).maybeSingle();if(q.error)throw q.error;return q.data;}
@@ -6151,20 +6118,21 @@ window.rkCloudSyncSettings=async function(){
     try{
       if(typeof status==='function')status('syncing','Loading from Supabase…');
 
-      // Load independent tables in parallel instead of one-by-one. This removes
-      // the long serial wait after login while keeping the same final state.
-      const results=await Promise.all(TABLES.map(async([table,local])=>{
-        const {data,error}=await cloud().from(table).select('*');
-        if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
-        return [local,data||[]];
-      }));
+      // All independent reads happen in parallel: operational tables + settings.
+      // This removes the last serial network wait during login.
+      const [results, settingsRow]=await Promise.all([
+        Promise.all(TABLES.map(async([table,local])=>{
+          const {data,error}=await cloud().from(table).select('*');
+          if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
+          return [local,data||[]];
+        })),
+        getSettingsRow()
+      ]);
       results.forEach(([local,data])=>setLocal(local,data));
-
-      // Settings is independent too, so fetch it without another serial delay.
-      const settingsRow=await getSettingsRow();
       applySettings(settingsRow);
 
       takeBaseline();
+      window.RK_CLOUD_LAST_HYDRATE_AT=Date.now();
       window.RK_CLOUD_READY=true;
       if(typeof applyUI==='function')applyUI();
       if(typeof render==='function')render();
@@ -6231,11 +6199,29 @@ window.rkCloudSyncSettings=async function(){
       const arr=localArray(localName);const idx=arr.findIndex(x=>String(x.id)===String(mapped.id));if(idx>=0)arr[idx]=mapped;else arr.push(mapped);
       baseline[table]?.set(String(mapped.id),comparable(table,mapped));
     }
-    if(typeof render==='function')render();
+    if(typeof window.rkRefreshCurrentPage==='function') window.rkRefreshCurrentPage();
+    else if(typeof render==='function') render();
   }
   function subscribe(table){
     if(!isCloud())return null;
-    const ch=cloud().channel('rk-live-'+table).on('postgres_changes',{event:'*',schema:'public',table},payload=>{try{if(table==='studio_settings'){if(payload.eventType!=='DELETE'){applySettings(payload.new);baseline.studio_settings=JSON.stringify(db.settings||{});if(typeof applyUI==='function')applyUI();if(typeof render==='function')render();}return;}mergeRealtime(table,payload);}catch(e){console.warn('Realtime merge failed',e);}}).subscribe();
+    const ch=cloud().channel('rk-live-'+table).on('postgres_changes',{event:'*',schema:'public',table},payload=>{
+      try{
+        if(table==='studio_settings'){
+          if(payload.eventType!=='DELETE'){
+            applySettings(payload.new);
+            baseline.studio_settings=JSON.stringify(db.settings||{});
+            if(typeof applyUI==='function')applyUI();
+            const editing=typeof window.rkSettingsIsEditing==='function' && window.rkSettingsIsEditing();
+            if(!editing){
+              if(typeof window.rkRefreshCurrentPage==='function') window.rkRefreshCurrentPage();
+              else if(typeof render==='function') render();
+            }
+          }
+          return;
+        }
+        mergeRealtime(table,payload);
+      }catch(e){console.warn('Realtime merge failed',e)}
+    }).subscribe();
     return ch;
   }
   function startRealtime(){channels.forEach(c=>{try{cloud().removeChannel(c)}catch(e){}});channels=TABLES.map(x=>subscribe(x[0])).filter(Boolean);channels.push(subscribe('studio_settings'))}
@@ -6319,24 +6305,25 @@ window.rkCloudSyncSettings=async function(){
     window.saveSettings=wrappedSaveSettings;
   }
 
-  // Realtime is primary. This lightweight fallback refresh makes Settings
-  // propagate even when the Supabase project has not enabled Realtime for
-  // studio_settings yet. It also runs immediately when the page becomes visible.
-  let timer=null;
+  // Realtime is primary. Full-data refresh is intentionally limited to
+  // page visibility/foreground events so we do not repeatedly download all
+  // tables in the background. Settings still have an explicit read path.
+  let refreshInFlight=false;
   async function refreshVisible(){
-    if(document.hidden || sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return;
+    if(document.hidden || sessionStorage.getItem('rkStudioAuthProvider')!=='supabase' || refreshInFlight) return;
+    refreshInFlight=true;
     try{
-      if(typeof window.rkCloudHydratePhase3==='function') await window.rkCloudHydratePhase3();
+      const last=Number(window.RK_CLOUD_LAST_HYDRATE_AT||0);
+      if(Date.now()-last>1500 && typeof window.rkCloudHydratePhase3==='function'){
+        await window.rkCloudHydratePhase3();
+      }
       if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
-    }catch(e){ console.warn('Periodic cloud refresh failed:',e); }
-    await syncSettingsNow();
+      await syncSettingsNow();
+    }catch(e){ console.warn('Foreground cloud refresh failed:',e); }
+    finally{refreshInFlight=false;}
   }
-  function start(){
-    clearInterval(timer);
-    timer=setInterval(refreshVisible,10000);
-    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshVisible(); });
-  }
-  start();
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshVisible(); });
+  window.addEventListener('pageshow',refreshVisible);
   refreshVisible();
 })();
 </script>
@@ -6363,6 +6350,8 @@ window.rkCloudSyncSettings=async function(){
       try{
         const ready=await waitForEngine();
         if(!ready) throw new Error('Cloud sync engine not ready');
+        const last=Number(window.RK_CLOUD_LAST_HYDRATE_AT||0);
+        if(Date.now()-last<2000) return true;
         if(typeof window.status==='function') window.status('syncing','Syncing latest server data…');
         const ok=await window.rkCloudHydratePhase3();
         if(!ok) throw new Error(window.RK_CLOUD_LAST_ERROR||'Cloud refresh failed');
