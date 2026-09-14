@@ -5305,7 +5305,7 @@ function customerTimeline(cid){
     CLOUD_TABLES.forEach(x=>subscribe(x.name));
   }
   window.rkCloudStartRealtimePhase3=startRealtime;
-  setTimeout(async()=>{if(cloudSession()){try{await hydrate();startRealtime()}catch(e){console.warn('Cloud bootstrap skipped',e);status('local','Cloud bootstrap failed')}}},900);
+  /* legacy v139 automatic bootstrap disabled; final server-authoritative engine owns startup */
 })();
 </script>
 
@@ -6171,7 +6171,7 @@ window.rkCloudSyncSettings=async function(){
   }
 
   async function pushChanged(){
-    if(!isCloud()||!booted||!window.RK_CLOUD_READY)return;
+    if(!isCloud()||!window.RK_CLOUD_READY)return;
     const uid=await authUserId();
     const failures=[];
     for(const [table,local] of TABLES){
