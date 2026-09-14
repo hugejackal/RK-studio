@@ -25,6 +25,13 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--border
 .formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.full{grid-column:1/-1}.label{font-size:13px;font-weight:700;margin-bottom:6px;display:block}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.show{display:flex}.modalbox{background:var(--card);color:var(--text);border-radius:calc(var(--radius) + 3px);width:min(720px,100%);max-height:90vh;overflow:auto;padding:22px}.modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modalhead h2{margin:0}
 .invoice{max-width:850px;margin:auto;background:var(--card);border:1px solid var(--border);padding:34px;border-radius:16px}.invoicehead{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #222;padding-bottom:20px}.invoice h2{margin:0}.invoice .total{font-size:25px;font-weight:800}.right{text-align:right}.invoice table{margin-top:22px}.invoice-actions{display:flex;gap:10px;justify-content:flex-end;margin-bottom:16px}
+.invoice-customer-block{display:flex;align-items:center;gap:14px;margin:18px 0 20px;padding:0;min-height:62px;}
+.invoice-customer-photo{width:62px;min-width:62px;height:62px;display:flex;align-items:center;justify-content:center;flex:0 0 62px;align-self:center;}
+.invoice-customer-photo .avatar{width:62px;height:62px;min-width:62px;max-width:62px;border-radius:50%;object-fit:cover;}
+.invoice-customer-details{font-size:13px;line-height:1.45;align-self:center;color:var(--text,#20212a);min-width:0;}
+.invoice-customer-title{font-size:14px;font-weight:800;margin-bottom:2px;}
+@media print{.invoice-customer-block{break-inside:avoid;page-break-inside:avoid;}}
+@media(max-width:700px){.invoice-customer-block{gap:12px;align-items:center;margin:14px 0 18px}.invoice-customer-photo,.invoice-customer-photo .avatar{width:58px;height:58px;min-width:58px;max-width:58px}.invoice-customer-details{font-size:12px;line-height:1.4}.invoice-customer-title{font-size:13px;}}
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.day{background:var(--card);border:1px solid var(--border);min-height:100px;border-radius:10px;padding:9px}.event{font-size:11px;background:#eeeaff;color:#5239cc;padding:5px;border-radius:6px;margin-top:6px}
 .package-card{position:relative}.package-price{font-size:27px;font-weight:800;margin:12px 0}.package-list{padding-left:18px;color:var(--muted);line-height:1.8}.package-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#f2efff;color:#5b42d4;font-size:11px;font-weight:700;margin:3px 3px 0 0}.empty{padding:45px;text-align:center;color:var(--muted)}.hidden{display:none!important}
 
@@ -2983,13 +2990,21 @@ async function openInvoiceView(id){
     <div class="invoicehead">
       <div>${db.settings?.companyLogo?`<img class="rk-invoice-logo" src="${db.settings.companyLogo}" alt="Company Logo">`:``}
         <h2>${esc(db.settings?.studio||"RK Studio")}</h2>
-        <div class="muted"><b>Add:</b> ${esc(db.settings?.address||"")}</div>
-        <div class="muted"><b>Mob:</b> ${esc(db.settings?.phone||"")}</div>
+        <div class="muted">${esc(db.settings?.address||"")}</div>
+        <div class="muted">${esc(db.settings?.phone||"")}</div>
       </div>
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div class="invoice-customer-details"><b>Bill To</b><br><b>Name:</b> ${esc(c.name||"")}<br><b>Mob:</b> ${esc(c.phone||"")}<br><b>Venue:</b> ${esc(c.venue||"")}</div></div>
+    <div class="invoice-customer-block">
+      <div class="invoice-customer-photo">${typeof customerAvatar==="function"?customerAvatar(c):""}</div>
+      <div class="invoice-customer-details">
+        <div class="invoice-customer-title">Bill To</div>
+        <div><b>Name:</b> ${esc(c.name||"")}</div>
+        <div><b>Mob:</b> ${esc(c.phone||"")}</div>
+        <div><b>Venue:</b> ${esc(c.venue||"")}</div>
+      </div>
+    </div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
@@ -4615,29 +4630,9 @@ async function rkCreateInvoicePDFBlob(invoiceId){
     const h=document.createElement('div');
     h.style.cssText=[
       'position:fixed','left:-100000px','top:0','width:794px',
-      'background:#fff','color:#20212a','margin:0','padding:0','z-index:-1',
-      'font-family:Arial,sans-serif',
-      '--bg:#fff','--card:#fff','--text:#20212a','--muted:#737784','--border:#dddddf',
-      '--primary:#6c4df6','--secondary:#9a84ff','--due-bg:#f6f3ff','--due-text:#20212a',
-      '--due-label:#737784','--due-amount:#20212a'
+      'background:#fff','color:#111','margin:0','padding:0','z-index:-1',
+      'font-family:Arial,sans-serif'
     ].join(';');
-    const css=document.createElement('style');
-    css.textContent=`
-      .invoice,.invoice *{color:#20212a!important;-webkit-text-fill-color:#20212a!important;}
-      .invoice{background:#fff!important;border-color:#ddd!important;}
-      .invoice .muted,.invoice th,.invoice .invoice-package-note,.invoice .invoice-package-services,
-      .invoice .invoice-line-services,.invoice .invoice-terms-intro,.invoice .invoice-term span,
-      .invoice .sub{color:#5f636d!important;-webkit-text-fill-color:#5f636d!important;}
-      .invoice th,.invoice td{border-color:#d8d8dc!important;}
-      .invoice .remaining-box,.invoice .current-due,.invoice .invoice-due-box,
-      .invoice > div[style*="background:#f6f4ff"]{background:#f6f3ff!important;color:#20212a!important;}
-      .invoice .remaining-box *, .invoice .current-due *, .invoice .invoice-due-box *{color:#20212a!important;-webkit-text-fill-color:#20212a!important;}
-      .invoice .payment-structure,.invoice .invoice-terms{background:#fff!important;color:#20212a!important;border-color:#ddd!important;}
-      .invoice .payment-structure *, .invoice .invoice-terms *{color:#20212a!important;-webkit-text-fill-color:#20212a!important;}
-      .invoice .rk-invoice-logo{display:block!important;object-fit:contain!important;object-position:left top!important;}
-      .invoice .avatar{object-fit:cover!important;}
-    `;
-    h.appendChild(css);
     document.body.appendChild(h);
     return h;
   }
@@ -4718,9 +4713,9 @@ async function rkCreateInvoicePDFBlob(invoiceId){
       ctx.fillRect(0,0,slice.width,slice.height);
       ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
 
-      const img=slice.toDataURL('image/png');
+      const img=slice.toDataURL('image/jpeg',0.96);
       const mmH=(slice.height*usableW)/canvas.width;
-      pdf.addImage(img,'PNG',margin,margin,usableW,mmH,undefined,'FAST');
+      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
 
       y=cut;
     }
@@ -4737,7 +4732,7 @@ async function rkCreateInvoicePDFBlob(invoiceId){
     holder.appendChild(clone);
     try{
       const canvas=await html2canvas(clone,{
-        scale:2.5,useCORS:true,backgroundColor:'#fff',
+        scale:2,useCORS:true,backgroundColor:'#fff',
         logging:false,windowWidth:794,imageTimeout:15000
       });
       addCanvasPages(canvas,getSafeCuts(clone));
