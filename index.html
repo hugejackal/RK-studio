@@ -6231,6 +6231,93 @@ window.rkCloudSyncSettings=async function(){
   if(isCloud())(async()=>{const ok=await hydrate();if(ok)startRealtime();})();
 })();
 </script>
+<script id="rk-v168-settings-cross-device-sync">
+(function(){
+  if(!window.RK_SERVER_ONLY || !window.RK_SUPABASE) return;
+
+  async function syncSettingsNow(){
+    try{
+      if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase' || !window.RK_CLOUD_READY) return false;
+      const {data,rowError}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
+      if(rowError) throw rowError;
+      if(!data || typeof window.rowToSettings!=='function') return false;
+      const next=window.rowToSettings(data);
+      const before=JSON.stringify(db.settings||{});
+      const after=JSON.stringify(next||{});
+      if(before!==after){
+        db.settings=next;
+        if(typeof applyUI==='function') applyUI();
+        if(typeof renderSettings==='function' && document.getElementById('settings') && !document.getElementById('settings').classList.contains('hidden')) renderSettings();
+        if(typeof render==='function') render();
+      }
+      return true;
+    }catch(e){
+      console.warn('Settings cross-device refresh failed:',e);
+      return false;
+    }
+  }
+
+  // Expose an explicit save path for settings. This is in addition to the
+  // normal change-detection sync, so settings changes are pushed immediately.
+  window.rkSyncSettingsNow=async function(){
+    try{
+      if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase' || !window.RK_CLOUD_READY) return false;
+      const s=db.settings||{};
+      const row={
+        id:true,
+        studio_name:s.studio||'RK Studio', phone:s.phone||null, address:s.address||null,
+        company_logo_path:s.companyLogoPath||null,
+        primary_color:s.primary||null, secondary_color:s.secondary||null,
+        background_color:s.background||null, card_color:s.cardColor||null,
+        theme:s.theme==='dark'?'dark':'light',
+        sidebar_style:s.sidebar==='light'?'light':'dark', sidebar_color:s.sidebarColor||null,
+        compact:s.compact==='yes'?'yes':'no', sidebar_width:Number(s.sidebarWidth||245),
+        radius:Number(s.radius||15), font_size:Number(s.fontSize||16), font_family:s.fontFamily||null,
+        shadow:s.shadow||null, card_border:s.cardBorder||null, button_style:s.buttonStyle||null,
+        welcome_enabled:s.welcome?.enabled!==false,
+        welcome_title:s.welcome?.title||null, welcome_message:s.welcome?.message||null,
+        welcome_duration_ms:Number(s.welcome?.duration||1400),
+        whatsapp_templates:s.waTemplates||s.whatsappTemplates||{},
+        extra_services:s.extraServices||[],
+        custom_settings:s
+      };
+      const {error}=await window.RK_SUPABASE.from('studio_settings').upsert(row,{onConflict:'id'});
+      if(error) throw error;
+      if(typeof window.rkCloudSyncPhase3==='function') await window.rkCloudSyncPhase3();
+      return true;
+    }catch(e){
+      window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
+      console.warn('Immediate settings save failed:',e);
+      return false;
+    }
+  };
+
+  // Wrap the existing Settings save so the shared settings row is written
+  // immediately, not only after the general sync debounce.
+  const oldSaveSettings=window.saveSettings;
+  if(typeof oldSaveSettings==='function' && !oldSaveSettings.__rkSettings168){
+    const wrappedSaveSettings=async function(){
+      const result=await oldSaveSettings.apply(this,arguments);
+      await window.rkSyncSettingsNow();
+      return result;
+    };
+    wrappedSaveSettings.__rkSettings168=true;
+    window.saveSettings=wrappedSaveSettings;
+  }
+
+  // Realtime is primary. This lightweight fallback refresh makes Settings
+  // propagate even when the Supabase project has not enabled Realtime for
+  // studio_settings yet. It also runs immediately when the page becomes visible.
+  let timer=null;
+  function start(){
+    clearInterval(timer);
+    timer=setInterval(()=>{ if(!document.hidden) syncSettingsNow(); },5000);
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncSettingsNow(); });
+  }
+  start();
+  syncSettingsNow();
+})();
+</script>
 </html>
 <style id="v90-pdf-smart-pagination">
 @media print{
