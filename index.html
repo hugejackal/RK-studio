@@ -5034,6 +5034,7 @@ function customerTimeline(cid){
 
 <script id="rk-v139-cloud-sync">
 (function(){
+  if(window.RK_SERVER_ONLY) return;
   const CLOUD_TABLES=[
     {name:'customers',local:'customers'},
     {name:'shoots',local:'events'},
@@ -6018,15 +6019,7 @@ window.rkCloudSyncSettings=async function(){
 </body>
 <script id="rk-v167-server-authoritative-multiplayer">
 (function(){
-  /*
-   * Server-authoritative data mode.
-   * - Supabase is the only persistent source for app data.
-   * - localStorage is not used for the application database.
-   * - Each browser keeps a last-server snapshot and uploads only records it
-   *   changed locally, preventing a stale second browser from overwriting
-   *   unrelated records.
-   * - Realtime updates are merged into the live UI for simultaneous users.
-   */
+  /* Clean server-authoritative sync layer for deployed HTTPS builds. */
   if(!window.RK_SERVER_ONLY) return;
   const cloud=()=>window.RK_SUPABASE;
   const isCloud=()=>!!cloud() && sessionStorage.getItem('rkStudioAuthProvider')==='supabase';
@@ -6036,215 +6029,182 @@ window.rkCloudSyncSettings=async function(){
     ['activity_logs','activityLog']
   ];
   let baseline={};
-  let syncTimer=null, syncing=false;
-  let initialized=false;
+  let syncTimer=null, syncing=false, booted=false;
+  let channels=[];
 
-  function clone(v){
-    try{return JSON.parse(JSON.stringify(v));}catch(e){return v;}
+  const safeArray=v=>Array.isArray(v)?v:[];
+  const str=v=>v==null?'':String(v);
+  const clone=v=>JSON.parse(JSON.stringify(v));
+  const uuidLike=v=>/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''));
+
+  function customerToRow(c){
+    return {id:str(c.id),name:str(c.name),phone:c.phone||null,email:c.email||null,address:c.address||null,notes:c.notes||null,photo_path:null,
+      custom_data:{weddingDate:c.weddingDate||'',venue:c.venue||'',package:c.package||'',photo:c.photo||''}};
   }
-  function localRows(name,local){return Array.isArray(db?.[local])?db[local]:[];}
-  function rowFor(name,obj){
-    if(name==='customers')return customerToRow(obj);
-    if(name==='shoots')return shootToRow(obj);
-    if(name==='packages')return packageToRow(obj);
-    if(name==='invoices')return invoiceToRow(obj);
-    if(name==='payments')return toPayment(obj,null);
-    if(name==='expenses')return toExpense(obj,null);
-    if(name==='activity_logs')return toLog(obj,null);
+  function rowToCustomer(r){
+    const x=r?.custom_data||{};
+    return {id:str(r?.id),name:r?.name||'',phone:r?.phone||'',email:r?.email||'',address:r?.address||'',notes:r?.notes||'',
+      weddingDate:x.weddingDate||'',venue:x.venue||'',package:x.package||'',photo:x.photo||''};
+  }
+  function shootToRow(e){
+    return {id:str(e.id),customer_id:e.customerId?str(e.customerId):null,name:e.name||'',event_type:e.name||'Shoot',date:e.date||null,start_time:e.time||null,
+      location:e.venue||'',status:e.status||'Planned',team:Array.isArray(e.team)?e.team:(e.team?str(e.team).split(/\s*,\s*/).filter(Boolean):[]),
+      requirements:e.requirements||'',notes:e.notes||'',custom_data:{}};
+  }
+  function rowToShoot(r){
+    return {id:str(r?.id),name:r?.name||r?.event_type||'Shoot',date:r?.date||'',time:r?.start_time||'',venue:r?.location||'',customerId:r?.customer_id?str(r.customer_id):'',status:r?.status||'Planned',team:r?.team||'',notes:r?.notes||''};
+  }
+  function packageToRow(p){return {id:str(p.id),name:str(p.name),price:Number(p.price||0),items:safeArray(p.items),active:p.active!==false};}
+  function rowToPackage(r){return {id:str(r?.id),name:r?.name||'',price:Number(r?.price||0),items:safeArray(r?.items),active:r?.active!==false};}
+  function invoiceToRow(i){
+    return {id:str(i.id),customer_id:i.customerId?str(i.customerId):null,invoice_number:i.number||'',invoice_date:i.date||null,due_date:i.dueDate||null,
+      status:i.status||null,subtotal:Number(i.subtotal||i.total||0),total:Number(i.total||0),paid:Number(i.paid||0),remaining:Math.max(0,Number(i.total||0)-Number(i.paid||0)),
+      notes:i.notes||null,terms:i.terms||null,package_id:i.packageId?str(i.packageId):null,deliverables:i.deliverables||{},
+      custom_data:{items:safeArray(i.items),customerSnapshot:i.customerSnapshot||null}};
+  }
+  function rowToInvoice(r, fallback){
+    const x=r?.custom_data||{};
+    return {id:str(r?.id),number:r?.invoice_number||'',date:r?.invoice_date||'',dueDate:r?.due_date||'',customerId:r?.customer_id?str(r.customer_id):str(fallback?.customerId||''),
+      items:safeArray(x.items),paid:Number(r?.paid||0),total:Number(r?.total||0),subtotal:Number(r?.subtotal||r?.total||0),packageId:r?.package_id?str(r.package_id):str(fallback?.packageId||''),
+      status:r?.status||'',customerSnapshot:x.customerSnapshot||fallback?.customerSnapshot||null};
+  }
+  function paymentToRow(p,uid){return {id:str(p.id),invoice_id:p.invoiceId?str(p.invoiceId):null,customer_id:p.customerId?str(p.customerId):null,date:p.date||null,amount:Number(p.amount||0),method:p.method||null,note:p.note||null,media_path:null,created_by:uid||null};}
+  function rowToPayment(r){return {id:str(r?.id),date:r?.date||'',amount:Number(r?.amount||0),invoiceId:r?.invoice_id?str(r.invoice_id):'',customerId:r?.customer_id?str(r.customer_id):'',method:r?.method||'Other',note:r?.note||'Payment received',media:[]};}
+  function expenseToRow(e,uid){return {id:str(e.id),customer_id:e.customerId?str(e.customerId):null,category:e.category||null,amount:Number(e.amount||0),date:e.date||null,description:e.description||'',created_by:uid||null};}
+  function rowToExpense(r){return {id:str(r?.id),date:r?.date||'',customerId:r?.customer_id?str(r.customer_id):'',category:r?.category||'',amount:Number(r?.amount||0),description:r?.description||'',note:''};}
+  function logUuid(x){
+    const s=[x?.id||'',x?.at||x?.createdAt||'',x?.type||'System',x?.action||'',x?.detail||'',x?.entityId||''].join('|');
+    let h=[2166136261,2166136261,2166136261,2166136261];
+    for(let i=0;i<s.length;i++){const c=s.charCodeAt(i);h[0]=Math.imul(h[0]^c,16777619)>>>0;h[1]=Math.imul(h[1]^(c+(i<<1)),16777619)>>>0;h[2]=Math.imul(h[2]^(c+(i<<2)),16777619)>>>0;h[3]=Math.imul(h[3]^(c+(i<<3)),16777619)>>>0;}
+    const hex=h.map(x=>x.toString(16).padStart(8,'0')).join('');
+    return hex.slice(0,8)+'-'+hex.slice(8,12)+'-4'+hex.slice(13,16)+'-'+(((parseInt(hex.slice(16,18),16)&0x3f)|0x80).toString(16).padStart(2,'0'))+hex.slice(18,20)+'-'+hex.slice(20,32);
+  }
+  function logToRow(x,uid){return {id:uuidLike(x?.id)?x.id:logUuid(x),type:x?.type||'System',action:x?.action||'',detail:x?.detail||'',entity_type:x?.entityType||null,entity_id:x?.entityId?str(x.entityId):null,user_id:uid||null,created_at:x?.at||x?.createdAt||new Date().toISOString()};}
+  function rowToLog(r){return {id:str(r?.id),type:r?.type||'System',action:r?.action||'',detail:r?.detail||'',entityId:r?.entity_id||'',userId:r?.user_id||'',user:r?.user||'Cloud',at:r?.created_at||new Date().toISOString()};}
+
+  function rowFor(table,obj,uid){
+    if(table==='customers')return customerToRow(obj);
+    if(table==='shoots')return shootToRow(obj);
+    if(table==='packages')return packageToRow(obj);
+    if(table==='invoices')return invoiceToRow(obj);
+    if(table==='payments')return paymentToRow(obj,uid);
+    if(table==='expenses')return expenseToRow(obj,uid);
+    if(table==='activity_logs')return logToRow(obj,uid);
     return obj;
   }
-  function comparable(name,obj){
-    try{return JSON.stringify(rowFor(name,obj));}catch(e){return JSON.stringify(obj);}
+  function comparable(table,obj){try{return JSON.stringify(rowFor(table,obj,null));}catch(e){return JSON.stringify(obj);}}
+  function localArray(local){return safeArray(db?.[local]);}
+  function setLocal(table,rows){
+    if(table==='customers')db.customers=rows.map(rowToCustomer);
+    else if(table==='shoots')db.events=rows.map(rowToShoot);
+    else if(table==='packages')db.packages=rows.map(rowToPackage);
+    else if(table==='invoices'){
+      const old=new Map(localArray('invoices').map(x=>[String(x.id),x]));
+      db.invoices=rows.map(r=>rowToInvoice(r,old.get(String(r.id))));
+    } else if(table==='payments')db.payments=rows.map(rowToPayment);
+    else if(table==='expenses')db.expenses=rows.map(rowToExpense);
+    else if(table==='activity_logs')db.activityLog=rows.map(rowToLog);
   }
   function takeBaseline(){
     baseline={};
-    TABLES.forEach(([name,local])=>{
-      baseline[name]=new Map(localRows(name,local).map(x=>[String(x.id),comparable(name,x)]));
-    });
+    TABLES.forEach(([table,local])=>baseline[table]=new Map(localArray(local).map(x=>[String(x.id),comparable(table,x)])));
     baseline.studio_settings=JSON.stringify(db.settings||{});
-    initialized=true;
+    booted=true;
   }
-  function changedRows(name,local){
-    const old=baseline[name]||new Map();
-    return localRows(name,local).filter(x=>old.get(String(x.id))!==comparable(name,x));
-  }
+  async function authUserId(){try{return (await cloud().auth.getUser()).data?.user?.id||null}catch(e){return null}}
+  async function getSettingsRow(){const q=await cloud().from('studio_settings').select('*').eq('id',true).maybeSingle();if(q.error)throw q.error;return q.data;}
+  function settingsRow(s){return {id:true,studio_name:s?.studio||'RK Studio',phone:s?.phone||null,address:s?.address||null,company_logo_path:s?.companyLogoPath||null,
+    primary_color:s?.primary||null,secondary_color:s?.secondary||null,background_color:s?.background||null,card_color:s?.cardColor||null,theme:s?.theme==='dark'?'dark':'light',
+    sidebar_style:s?.sidebar==='light'?'light':'dark',sidebar_color:s?.sidebarColor||null,compact:s?.compact==='yes'?'yes':'no',sidebar_width:Number(s?.sidebarWidth||245),radius:Number(s?.radius||15),
+    font_size:Number(s?.fontSize||16),font_family:s?.fontFamily||null,shadow:s?.shadow||null,card_border:s?.cardBorder||null,button_style:s?.buttonStyle||null,
+    welcome_enabled:s?.welcome?.enabled!==false,welcome_title:s?.welcome?.title||null,welcome_message:s?.welcome?.message||null,welcome_duration_ms:Number(s?.welcome?.duration||1400),
+    whatsapp_templates:s?.waTemplates||{},extra_services:s?.extraServices||[],custom_settings:s||{}};}
+  function applySettings(r){if(!r)return;const e=r.custom_settings||{};db.settings={...db.settings,...e,studio:r.studio_name||e.studio||'RK Studio',phone:r.phone||e.phone||'',address:r.address||e.address||'',companyLogoPath:r.company_logo_path||e.companyLogoPath||'',primary:r.primary_color||e.primary||'#6c4df6',secondary:r.secondary_color||e.secondary||'#9a84ff',background:r.background_color||e.background||'#f5f6fa',cardColor:r.card_color||e.cardColor||'#fff',theme:r.theme||e.theme||'light',sidebar:r.sidebar_style||e.sidebar||'dark',sidebarColor:r.sidebar_color||e.sidebarColor||'#17151f',compact:r.compact||e.compact||'no',sidebarWidth:Number(r.sidebar_width||e.sidebarWidth||245),radius:Number(r.radius||e.radius||15),fontSize:Number(r.font_size||e.fontSize||16),fontFamily:r.font_family||e.fontFamily||'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:r.shadow||e.shadow||'soft',cardBorder:r.card_border||e.cardBorder||'on',buttonStyle:r.button_style||e.buttonStyle||'rounded',extraServices:r.extra_services||e.extraServices||[]};}
 
-  async function serverSettings(){
-    if(!isCloud())return;
-    const s=db.settings||{};
-    const row=(typeof settingsToRow==='function')?settingsToRow(s):{
-      id:true,studio_name:s.studio||'RK Studio',phone:s.phone||null,address:s.address||null,
-      primary_color:s.primary||null,secondary_color:s.secondary||null,
-      background_color:s.background||null,card_color:s.cardColor||null,
-      theme:s.theme==='dark'?'dark':'light',sidebar_style:s.sidebar==='light'?'light':'dark',
-      sidebar_color:s.sidebarColor||null,compact:s.compact==='yes'?'yes':'no',
-      sidebar_width:Number(s.sidebarWidth||245),radius:Number(s.radius||15),font_size:Number(s.fontSize||16),
-      font_family:s.fontFamily||null,shadow:s.shadow||null,card_border:s.cardBorder||null,
-      button_style:s.buttonStyle||null,custom_settings:s
-    };
-    const {error}=await cloud().from('studio_settings').upsert(row,{onConflict:'id'});
-    if(error)throw error;
-  }
-
-  async function pushChanged(){
-    if(!isCloud()||!initialized)return;
-    const failures=[];
-    for(const [name,local] of TABLES){
-      const rows=changedRows(name,local);
-      if(!rows.length)continue;
-      const uid=await authUserId();
-      const payload=rows.map(x=>{
-        const r=rowFor(name,x);
-        if((name==='payments'||name==='expenses'||name==='activity_logs')&&uid){
-          if(name==='activity_logs')r.user_id=uid; else r.created_by=uid;
-        }
-        return r;
-      });
-      const {error}=await cloud().from(name).upsert(payload,{onConflict:'id'});
-      if(error)failures.push(`${name}: ${error.message||JSON.stringify(error)}`);
-    }
-    if(JSON.stringify(db.settings||{})!==baseline.studio_settings) await serverSettings();
-    if(failures.length)throw new Error(failures.join(' | '));
-    takeBaseline();
-  }
-
-  async function authoritativeHydrate(){
+  async function hydrate(){
     if(!isCloud())return false;
     try{
-      const results={};
-      for(const [name,local] of TABLES){
-        const {data,error}=await cloud().from(name).select('*');
-        if(error)throw new Error(`${name}: ${error.message||JSON.stringify(error)}`);
-        results[name]=data||[];
+      if(typeof status==='function')status('syncing','Loading from Supabase…');
+      for(const [table,local] of TABLES){
+        const {data,error}=await cloud().from(table).select('*');
+        if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
+        setLocal(table,data||[]);
       }
-      const {data:settings,error:se}=await cloud().from('studio_settings').select('*').eq('id',true).maybeSingle();
-      if(se)throw new Error(`studio_settings: ${se.message||JSON.stringify(se)}`);
-
-      /* Cloud is authoritative on startup. Do not resurrect browser-only rows. */
-      db.customers=results.customers.map(rowToCustomer);
-      db.events=results.shoots.map(rowToShoot);
-      db.packages=results.packages.map(rowToPackage);
-      const invLocal=new Map((db.invoices||[]).map(x=>[String(x.id),x]));
-      db.invoices=results.invoices.map(r=>rowToInvoice(r,invLocal.get(String(r.id))));
-      db.payments=results.payments.map(rowToPayment);
-      db.expenses=results.expenses.map(rowToExpense);
-      db.activityLog=results.activity_logs.map(rowToLog);
-      if(settings && typeof rowToSettings==='function')db.settings=rowToSettings(settings);
+      applySettings(await getSettingsRow());
       takeBaseline();
+      window.RK_CLOUD_READY=true;
       if(typeof applyUI==='function')applyUI();
       if(typeof render==='function')render();
-      initialized=true;
-      if(typeof status==='function')status('synced','Server is the source of truth.');
+      if(typeof status==='function')status('synced','Supabase synced');
       window.RK_CLOUD_LAST_ERROR='';
       return true;
     }catch(e){
-      console.error('Server-authoritative hydrate failed:',e);
-      if(typeof status==='function')status('local','Cloud load failed: '+(e.message||e));
+      window.RK_CLOUD_READY=false;
       window.RK_CLOUD_LAST_ERROR=e.message||String(e);
+      console.error('Supabase hydrate failed:',e);
+      if(typeof status==='function')status('local','Cloud load failed: '+(e.message||e));
       return false;
     }
   }
 
+  async function pushChanged(){
+    if(!isCloud()||!booted||!window.RK_CLOUD_READY)return;
+    const uid=await authUserId();
+    const failures=[];
+    for(const [table,local] of TABLES){
+      const old=baseline[table]||new Map();
+      const current=localArray(local);
+      const changed=current.filter(x=>old.get(String(x.id))!==comparable(table,x));
+      if(!changed.length)continue;
+      const payload=changed.map(x=>rowFor(table,x,uid));
+      const {error}=await cloud().from(table).upsert(payload,{onConflict:'id'});
+      if(error)failures.push(`${table}: ${error.message||JSON.stringify(error)}`);
+    }
+    const nowSettings=JSON.stringify(db.settings||{});
+    if(nowSettings!==baseline.studio_settings){
+      const {error}=await cloud().from('studio_settings').upsert(settingsRow(db.settings||{}),{onConflict:'id'});
+      if(error)failures.push(`studio_settings: ${error.message||JSON.stringify(error)}`);
+    }
+    if(failures.length)throw new Error(failures.join(' | '));
+    takeBaseline();
+  }
   function schedule(){
-    if(!isCloud())return;
+    if(!isCloud()||!window.RK_CLOUD_READY)return;
     clearTimeout(syncTimer);
     syncTimer=setTimeout(async()=>{
       if(syncing)return;
       syncing=true;
-      try{
-        if(typeof status==='function')status('syncing','Saving to server…');
-        await pushChanged();
-        if(typeof status==='function')status('synced','Saved to server.');
-        window.RK_CLOUD_LAST_ERROR='';
-      }catch(e){
-        console.error('Server save failed:',e);
-        window.RK_CLOUD_LAST_ERROR=e.message||String(e);
-        if(typeof status==='function')status('local','Server save failed: '+(e.message||e));
-      }finally{syncing=false;}
-    },350);
+      try{if(typeof status==='function')status('syncing','Saving to Supabase…');await pushChanged();if(typeof status==='function')status('synced','Saved to Supabase');window.RK_CLOUD_LAST_ERROR='';}
+      catch(e){window.RK_CLOUD_LAST_ERROR=e.message||String(e);console.error('Supabase save failed:',e);if(typeof status==='function')status('local','Save failed: '+(e.message||e));}
+      finally{syncing=false;}
+    },300);
   }
-
-  /* Expose the server-authoritative scheduler used by every existing save(). */
   window.rkCloudScheduleSave=schedule;
   window.rkCloudSyncPhase3=pushChanged;
-  window.rkCloudHydratePhase3=authoritativeHydrate;
+  window.rkCloudHydratePhase3=hydrate;
 
-  /* Collaborative realtime: merge remote changes without replacing the whole DB. */
-  const remoteUpsert=(arr,obj)=>{
-    const i=arr.findIndex(x=>String(x.id)===String(obj.id));
-    if(i>=0)arr[i]=obj;else arr.push(obj);
-  };
-  function subscribe(name){
-    if(!isCloud())return;
-    const ch=cloud().channel('rk-v167-'+name).on('postgres_changes',{event:'*',schema:'public',table:name},payload=>{
-      try{
-        if(name==='studio_settings'){
-          if(payload.eventType==='DELETE')return;
-          if(typeof rowToSettings==='function'){
-            db.settings=rowToSettings(payload.new);
-            baseline.studio_settings=JSON.stringify(db.settings||{});
-            if(typeof applyUI==='function')applyUI();
-            if(document.getElementById('settings')&&!document.getElementById('settings').classList.contains('hidden')&&typeof renderSettings==='function')renderSettings();
-          }
-          return;
-        }
-        if(name==='customers'){
-          if(payload.eventType==='DELETE')db.customers=db.customers.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.customers,rowToCustomer(payload.new));
-        }
-        if(name==='shoots'){
-          if(payload.eventType==='DELETE')db.events=db.events.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.events,rowToShoot(payload.new));
-        }
-        if(name==='packages'){
-          if(payload.eventType==='DELETE')db.packages=db.packages.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.packages,rowToPackage(payload.new));
-        }
-        if(name==='invoices'){
-          if(payload.eventType==='DELETE')db.invoices=db.invoices.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.invoices,rowToInvoice(payload.new,(db.invoices||[]).find(x=>String(x.id)===String(payload.new.id))));
-        }
-        if(name==='payments'){
-          if(payload.eventType==='DELETE')db.payments=db.payments.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.payments,rowToPayment(payload.new));
-        }
-        if(name==='expenses'){
-          if(payload.eventType==='DELETE')db.expenses=db.expenses.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.expenses,rowToExpense(payload.new));
-        }
-        if(name==='activity_logs'){
-          if(payload.eventType==='DELETE')db.activityLog=db.activityLog.filter(x=>String(x.id)!==String(payload.old.id));
-          else remoteUpsert(db.activityLog,rowToLog(payload.new));
-        }
-        /* Update the server baseline so a remote edit is not re-uploaded by this browser. */
-        if(baseline[name]){
-          const id=String(payload.eventType==='DELETE'?payload.old.id:payload.new.id);
-          if(payload.eventType==='DELETE')baseline[name].delete(id);
-          else {
-            const local=localRows(name,TABLES.find(x=>x[0]===name)?.[1]||name).find(x=>String(x.id)===id);
-            if(local)baseline[name].set(id,comparable(name,local));
-          }
-        }
-        if(typeof render==='function')render();
-      }catch(e){console.warn('Realtime update skipped',e)}
-    }).subscribe();
+  function mergeRealtime(table,payload){
+    const localName=TABLES.find(x=>x[0]===table)?.[1];
+    if(!localName)return;
+    if(payload.eventType==='DELETE'){
+      db[localName]=localArray(localName).filter(x=>String(x.id)!==String(payload.old?.id));
+      baseline[table]?.delete(String(payload.old?.id));
+    }else{
+      const mapped=table==='customers'?rowToCustomer(payload.new):table==='shoots'?rowToShoot(payload.new):table==='packages'?rowToPackage(payload.new):table==='invoices'?rowToInvoice(payload.new,localArray('invoices').find(x=>String(x.id)===String(payload.new.id))):table==='payments'?rowToPayment(payload.new):table==='expenses'?rowToExpense(payload.new):rowToLog(payload.new);
+      const arr=localArray(localName);const idx=arr.findIndex(x=>String(x.id)===String(mapped.id));if(idx>=0)arr[idx]=mapped;else arr.push(mapped);
+      baseline[table]?.set(String(mapped.id),comparable(table,mapped));
+    }
+    if(typeof render==='function')render();
+  }
+  function subscribe(table){
+    if(!isCloud())return null;
+    const ch=cloud().channel('rk-live-'+table).on('postgres_changes',{event:'*',schema:'public',table},payload=>{try{if(table==='studio_settings'){if(payload.eventType!=='DELETE'){applySettings(payload.new);baseline.studio_settings=JSON.stringify(db.settings||{});if(typeof applyUI==='function')applyUI();if(typeof render==='function')render();}return;}mergeRealtime(table,payload);}catch(e){console.warn('Realtime merge failed',e);}}).subscribe();
     return ch;
   }
-  let channels=[];
-  function start(){
-    channels.forEach(ch=>{try{cloud().removeChannel(ch)}catch(e){}});
-    channels=TABLES.map(x=>subscribe(x[0])).filter(Boolean);
-    channels.push(subscribe('studio_settings'));
-  }
-  window.rkCloudStartRealtimePhase3=start;
+  function startRealtime(){channels.forEach(c=>{try{cloud().removeChannel(c)}catch(e){}});channels=TABLES.map(x=>subscribe(x[0])).filter(Boolean);channels.push(subscribe('studio_settings'))}
+  window.rkCloudStartRealtimePhase3=startRealtime;
 
-  /* Do not show local data before the first authoritative server load. */
-  if(isCloud()){
-    setTimeout(async()=>{
-      const ok=await authoritativeHydrate();
-      if(ok)start();
-    },0);
-  }
+  if(isCloud())setTimeout(async()=>{const ok=await hydrate();if(ok)startRealtime();},0);
 })();
 </script>
 </html>
