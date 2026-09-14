@@ -2265,15 +2265,25 @@ const RK_DEPLOYED = !!(window.location && window.location.protocol === 'https:' 
 const RK_SERVER_ONLY = RK_DEPLOYED;
 window.RK_DEPLOYED = RK_DEPLOYED;
 window.RK_CLOUD_ENABLED = RK_DEPLOYED;
+window.RK_CLOUD_READY = false;
 let db=null;
-try{ db=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ db=null; }
-db=db||{
+const freshDb=()=>({
 settings:{studio:"RK Studio",phone:"",address:""},
 customers:[],events:[],invoices:[],packages:[{id:"p1",name:"Classic Wedding",price:55000,items:["Traditional Photography","Full Wedding Video","1 Premium Album","All Edited Photos"]},{id:"p2",name:"Premium Wedding",price:85000,items:["Candid + Traditional Photography","Cinematic Wedding Film","2 Premium Albums","Drone Coverage","All Edited Photos"]},{id:"p3",name:"Royal Wedding",price:125000,items:["2 Photographers","2 Videographers","Cinematic Film","Drone + 4K Coverage","2 Premium Albums","Pre-Wedding Shoot","All Edited Photos"]}]
-};
+});
+if(RK_SERVER_ONLY){
+  // Production/Netlify: never use browser localStorage as a source of truth.
+  // Start empty and wait for the authoritative Supabase hydrate before any cloud write.
+  db=freshDb();
+}else{
+  try{ db=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ db=null; }
+  db=db||freshDb();
+}
 const save=()=>{try{
   if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
-  if(window.rkCloudScheduleSave) window.rkCloudScheduleSave();
+  // On production, a save before the first authoritative hydrate must not push
+  // the empty/default browser state and overwrite existing server data.
+  if(window.rkCloudScheduleSave && (!RK_SERVER_ONLY || window.RK_CLOUD_READY)) window.rkCloudScheduleSave();
   return true;
 }catch(e){console.error('RK Studio save failed',e);return false;}}
 const DEFAULT_ROLES={
@@ -3752,7 +3762,7 @@ settings.innerHTML=`<div class="top"><div><h1>Settings</h1><div class="sub">RK S
   </div>
 </div>
 <div class="card" style="margin-top:16px"><h3>UI Customization</h3><div class="muted">Customize RK Studio without changing your business data.</div>
-<div class="settings-section"><h4>🧾 Invoice & PDF</h4><div class="formgrid"><div><label class="label">Invoice Logo Width</label><input type="range" min="60" max="320" step="5" id="invoice_logo_width" value="${Number(st.invoiceLogoWidth||180)}" oninput="invoice_logo_width_value.textContent=this.value+'px'"><div class="muted" id="invoice_logo_width_value">${Number(st.invoiceLogoWidth||180)}px</div></div><div><label class="label">Invoice Logo Height</label><input type="range" min="30" max="160" step="5" id="invoice_logo_height" value="${Number(st.invoiceLogoHeight||70)}" oninput="invoice_logo_height_value.textContent=this.value+'px'"><div class="muted" id="invoice_logo_height_value">${Number(st.invoiceLogoHeight||70)}px</div></div></div><div class="muted" style="margin-top:8px">Controls the maximum displayed logo area on the invoice and Print / Save PDF.</div></div>
+<div class="settings-section"><h4>🧾 Invoice & PDF</h4><div class="formgrid"><div><label class="label">Invoice Logo Width</label><input type="range" min="60" max="320" step="5" id="invoice_logo_width" value="${Number(st.invoiceLogoWidth||180)}" oninput="invoice_logo_width_value.textContent=this.value+'px'"><div class="muted" id="invoice_logo_width_value">${Number(st.invoiceLogoWidth||180)}px</div></div><div><label class="label">Invoice Logo Height</label><input type="range" min="30" max="160" step="5" id="invoice_logo_height" value="${Number(st.invoiceLogoHeight||70)}" oninput="invoice_logo_height_value.textContent=this.value+'px'"><div class="muted" id="invoice_logo_height_value">${Number(st.invoiceLogoHeight||70)}px</div></div></div><div class="muted" style="margin-top:8px">Controls the displayed logo area on the invoice and Print / Save PDF. In production this setting is stored in Supabase with Studio Settings.</div></div>
 <div class="settings-section"><h4>Colors & Theme</h4><div class="formgrid"><div><label class="label">Primary Color</label><input type="color" id="ui_primary" value="${esc(st.primary||'#6c4df6')}" style="height:46px;padding:4px"></div><div><label class="label">Secondary Color</label><input type="color" id="ui_secondary" value="${esc(st.secondary||'#9a84ff')}" style="height:46px;padding:4px"></div><div><label class="label">Page Background</label><input type="color" id="ui_background" value="${esc(st.background||'#f5f6fa')}" style="height:46px;padding:4px"></div><div><label class="label">Card Color</label><input type="color" id="ui_card" value="${esc(st.cardColor||'#ffffff')}" style="height:46px;padding:4px"></div><div><label class="label">Appearance</label><select id="ui_theme"><option value="light" ${(st.theme||'light')==='light'?'selected':''}>Light</option><option value="dark" ${st.theme==='dark'?'selected':''}>Dark</option></select></div><div><label class="label">Sidebar Style</label><select id="ui_sidebar"><option value="dark" ${(st.sidebar||'dark')==='dark'?'selected':''}>Dark</option><option value="light" ${st.sidebar==='light'?'selected':''}>Light</option></select></div><div><label class="label">Sidebar Color</label><input type="color" id="ui_sidebar_color" value="${esc(st.sidebarColor||'#17151f')}" style="height:46px;padding:4px"></div></div></div>
 <div class="settings-section"><h4>Layout & Sizing</h4><div class="formgrid"><div><label class="label">Table Density</label><select id="ui_compact"><option value="no" ${(st.compact||'no')==='no'?'selected':''}>Comfortable</option><option value="yes" ${st.compact==='yes'?'selected':''}>Compact</option></select></div><div><label class="label">Sidebar Width</label><select id="ui_sidebar_width"><option value="210" ${st.sidebarWidth==210?'selected':''}>Narrow</option><option value="245" ${!st.sidebarWidth||st.sidebarWidth==245?'selected':''}>Normal</option><option value="285" ${st.sidebarWidth==285?'selected':''}>Wide</option></select></div><div><label class="label">Corner Radius</label><input type="range" min="4" max="28" id="ui_radius" value="${Number(st.radius||15)}" oninput="ui_radius_value.textContent=this.value+'px'"><div class="muted" id="ui_radius_value">${Number(st.radius||15)}px</div></div><div><label class="label">Font Size</label><input type="range" min="13" max="19" id="ui_font_size" value="${Number(st.fontSize||16)}" oninput="ui_font_size_value.textContent=this.value+'px'"><div class="muted" id="ui_font_size_value">${Number(st.fontSize||16)}px</div></div></div></div>
 <div class="settings-section"><h4>Typography & Components</h4><div class="formgrid"><div><label class="label">Font Family</label><select id="ui_font"><option value="Inter,system-ui,-apple-system,Segoe UI,sans-serif" ${(st.fontFamily||'').startsWith('Inter')||!st.fontFamily?'selected':''}>Modern / Inter</option><option value="Georgia,serif" ${st.fontFamily==='Georgia,serif'?'selected':''}>Elegant / Georgia</option><option value="Arial,sans-serif" ${st.fontFamily==='Arial,sans-serif'?'selected':''}>Classic / Arial</option><option value="Trebuchet MS,sans-serif" ${st.fontFamily==='Trebuchet MS,sans-serif'?'selected':''}>Friendly / Trebuchet</option></select></div><div><label class="label">Card Shadow</label><select id="ui_shadow"><option value="none" ${st.shadow==='none'?'selected':''}>None</option><option value="soft" ${(st.shadow||'soft')==='soft'?'selected':''}>Soft</option><option value="strong" ${st.shadow==='strong'?'selected':''}>Strong</option></select></div><div><label class="label">Card Border</label><select id="ui_card_border"><option value="on" ${(st.cardBorder||'on')==='on'?'selected':''}>On</option><option value="off" ${st.cardBorder==='off'?'selected':''}>Off</option></select></div><div><label class="label">Button Style</label><select id="ui_button_style"><option value="rounded" ${(st.buttonStyle||'rounded')==='rounded'?'selected':''}>Rounded</option><option value="pill" ${st.buttonStyle==='pill'?'selected':''}>Pill</option><option value="square" ${st.buttonStyle==='square'?'selected':''}>Square</option><option value="raised" ${st.buttonStyle==='raised'?'selected':''}>Raised</option></select></div></div></div>
@@ -6046,7 +6056,7 @@ window.rkCloudSyncSettings=async function(){
   }
 
   async function serverSettings(){
-    if(!isCloud())return;
+    if(!isCloud() || !window.RK_CLOUD_READY)return;
     const s=db.settings||{};
     const row=(typeof settingsToRow==='function')?settingsToRow(s):{
       id:true,studio_name:s.studio||'RK Studio',phone:s.phone||null,address:s.address||null,
@@ -6063,7 +6073,7 @@ window.rkCloudSyncSettings=async function(){
   }
 
   async function pushChanged(){
-    if(!isCloud()||!initialized)return;
+    if(!isCloud()||!initialized||!window.RK_CLOUD_READY)return;
     const failures=[];
     for(const [name,local] of TABLES){
       const rows=changedRows(name,local);
@@ -6110,10 +6120,12 @@ window.rkCloudSyncSettings=async function(){
       if(typeof applyUI==='function')applyUI();
       if(typeof render==='function')render();
       initialized=true;
+      window.RK_CLOUD_READY=true;
       if(typeof status==='function')status('synced','Server is the source of truth.');
       window.RK_CLOUD_LAST_ERROR='';
       return true;
     }catch(e){
+      window.RK_CLOUD_READY=false;
       console.error('Server-authoritative hydrate failed:',e);
       if(typeof status==='function')status('local','Cloud load failed: '+(e.message||e));
       window.RK_CLOUD_LAST_ERROR=e.message||String(e);
@@ -6122,7 +6134,7 @@ window.rkCloudSyncSettings=async function(){
   }
 
   function schedule(){
-    if(!isCloud())return;
+    if(!isCloud() || !window.RK_CLOUD_READY)return;
     clearTimeout(syncTimer);
     syncTimer=setTimeout(async()=>{
       if(syncing)return;
