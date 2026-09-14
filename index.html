@@ -25,6 +25,18 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--border
 .formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.full{grid-column:1/-1}.label{font-size:13px;font-weight:700;margin-bottom:6px;display:block}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.show{display:flex}.modalbox{background:var(--card);color:var(--text);border-radius:calc(var(--radius) + 3px);width:min(720px,100%);max-height:90vh;overflow:auto;padding:22px}.modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modalhead h2{margin:0}
 .invoice{max-width:850px;margin:auto;background:var(--card);border:1px solid var(--border);padding:34px;border-radius:16px}.invoicehead{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #222;padding-bottom:20px}.invoice h2{margin:0}.invoice .total{font-size:25px;font-weight:800}.right{text-align:right}.invoice table{margin-top:22px}.invoice-actions{display:flex;gap:10px;justify-content:flex-end;margin-bottom:16px}
+
+.invoice-customer-block{display:flex;align-items:flex-start;gap:14px;margin:18px 0 20px;padding:2px 0;}
+.invoice-customer-photo{width:62px;min-width:62px;height:62px;display:flex;align-items:center;justify-content:center;}
+.invoice-customer-photo .avatar{width:62px;height:62px;border-radius:50%;font-size:22px;}
+.invoice-customer-details{font-size:13px;line-height:1.45;min-width:0;}
+.invoice-customer-details b{font-size:14px;}
+@media(max-width:700px){
+  .invoice-customer-block{gap:12px;margin:14px 0 18px;}
+  .invoice-customer-photo,.invoice-customer-photo .avatar{width:58px;height:58px;min-width:58px;}
+  .invoice-customer-photo .avatar{font-size:20px;}
+  .invoice-customer-details{font-size:12px;line-height:1.4;}
+}
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.day{background:var(--card);border:1px solid var(--border);min-height:100px;border-radius:10px;padding:9px}.event{font-size:11px;background:#eeeaff;color:#5239cc;padding:5px;border-radius:6px;margin-top:6px}
 .package-card{position:relative}.package-price{font-size:27px;font-weight:800;margin:12px 0}.package-list{padding-left:18px;color:var(--muted);line-height:1.8}.package-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#f2efff;color:#5b42d4;font-size:11px;font-weight:700;margin:3px 3px 0 0}.empty{padding:45px;text-align:center;color:var(--muted)}.hidden{display:none!important}
 
@@ -2811,32 +2823,64 @@ customers.innerHTML=`<div class="top"><div><h1>${esc(c.name)}</h1><div class="su
 <div class="card"><h3>Billing Summary</h3>${inv.map(i=>`<div style="padding:9px 0;border-bottom:1px solid var(--border)"><b>${esc(i.number)}</b><br>Total ${money(i.total)} · Paid ${money(i.paid)} · <b>Remaining ${money(Math.max(0,i.total-i.paid))}</b><br><div class="actions" style="margin-top:8px"><button class="small" onclick="openInvoiceView('${i.id}')">🧾 View Bill</button><button class="small" onclick="addPayment('${i.id}')">+ Payment</button><button class="small" onclick="sendWhatsApp('${i.id}')">WhatsApp</button></div></div>`).join('')||'<div class="empty">No bills yet</div>'}</div></div>`;
 }
 
-async function printInvoiceClean(){
-  try{
-    const pdfBlob=await rkCreateInvoicePDFBlob();
-    const url=URL.createObjectURL(pdfBlob);
-    const w=window.open(url,'_blank');
-    if(!w){
-      const a=document.createElement('a');
-      a.href=url;
-      a.download='Invoice.pdf';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),60000);
-      alert('Popup blocked. PDF downloaded instead.');
-      return;
-    }
-    // The PDF opened here is the exact same Blob used by WhatsApp sharing.
-    setTimeout(()=>{
-      try{w.focus();}catch(e){}
-      setTimeout(()=>{try{w.print();}catch(e){}},350);
-    },500);
-    setTimeout(()=>URL.revokeObjectURL(url),60000);
-  }catch(e){
-    console.error('Print / Save PDF failed:',e);
-    alert('PDF create nahi ho paya. Please try again.');
+function printInvoiceClean(){
+  const invoice=document.querySelector('#invoices .invoice');
+  if(!invoice){ window.print(); return; }
+
+  const terms=invoice.querySelector('.invoice-terms') ||
+              document.querySelector('#invoices .invoice-terms') ||
+              document.querySelector('.invoice-terms');
+
+  const printClone=invoice.cloneNode(true);
+  if(terms && !printClone.querySelector('.invoice-terms')){
+    printClone.appendChild(terms.cloneNode(true));
   }
+
+  const w=window.open('about:blank','_blank','width=900,height=1200');
+  if(!w){ alert('Please allow pop-ups to print the invoice.'); return; }
+
+  const styles=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('\n');
+  w.document.open();
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice</title>${styles}
+  <style>
+    @page{margin:12mm}
+    html,body{background:#fff!important;margin:0!important;padding:0!important}
+    body{font-family:Arial,sans-serif}
+    .invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,
+    .invoice-action-bar,.print-hide,.html-link,.file-link,.source-link,.generated-link{display:none!important}
+    a[href]::after{content:none!important}
+    .invoice-terms{display:block!important;visibility:visible!important;page-break-inside:auto!important}
+  </style>
+<style id="rk-premium-animations-v87">
+@keyframes rkFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes rkFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes rkModalIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+.page:not(.hidden){animation:rkFadeUp .24s ease both}
+.card,.stat-card,.customer-card,.expense-card,.pnl-card,.activity-card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+@media (hover:hover){.card:hover,.stat-card:hover,.customer-card:hover,.expense-card:hover,.pnl-card:hover,.activity-card:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(0,0,0,.08)}}
+button,.btn,.small{transition:transform .12s ease,box-shadow .18s ease,background-color .18s ease,border-color .18s ease,opacity .18s ease}
+button:hover,.btn:hover,.small:hover{transform:translateY(-1px)}
+button:active,.btn:active,.small:active{transform:translateY(0) scale(.98)}
+input,select,textarea{transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(124,58,237,.10)}
+.toast{animation:rkFadeUp .22s ease both}
+.wa-custom-overlay{animation:rkFadeIn .16s ease both}
+.wa-custom-box{animation:rkModalIn .2s ease both}
+.modal,.modal-overlay{animation:rkFadeIn .16s ease both}
+.modal > div,.modal .modal-box{animation:rkModalIn .2s ease both}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
+</style>
+
+</head><body>${printClone.outerHTML}
+
+
+
+
+</body></html>`);
+  w.document.close();
+  w.onload=()=>{
+    setTimeout(()=>{w.focus();w.print();},150);
+  };
 }
 
 async function sendInvoicePdfWhatsApp(invoiceId){
@@ -3071,7 +3115,7 @@ async function openInvoiceView(id){
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block"><div class="invoice-customer-photo-wrap">${typeof customerAvatar==="function"?customerAvatar(c):""}</div><div class="invoice-customer-details"><div class="invoice-customer-label">Bill To</div><div class="invoice-customer-name">${esc(c.name||"")}</div><div class="invoice-customer-line">${esc(c.phone||"")}</div>${c.venue?`<div class="invoice-customer-line">${esc(c.venue)}</div>`:""}</div></div>
+    <div class="invoice-customer-block"><div class="invoice-customer-photo">${typeof customerAvatar==="function"?customerAvatar(c):""}</div><div class="invoice-customer-details"><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
@@ -4792,76 +4836,63 @@ async function rkCreateInvoicePDFBlob(invoiceId){
       ctx.fillRect(0,0,slice.width,slice.height);
       ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
 
-      const img=slice.toDataURL('image/png');
+      const img=slice.toDataURL('image/jpeg',0.96);
       const mmH=(slice.height*usableW)/canvas.width;
-      pdf.addImage(img,'PNG',margin,margin,usableW,mmH,undefined,'FAST');
+      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
 
       y=cut;
     }
-  }
-
-  function injectPdfReadability(root){
-    const style=document.createElement('style');
-    style.textContent=`
-      .invoice,.invoice *,.rk-pdf-block,.rk-pdf-block *{
-        opacity:1!important;
-        text-shadow:none!important;
-        -webkit-print-color-adjust:exact!important;
-        print-color-adjust:exact!important;
-      }
-      .invoice{color:#171717!important;background:#fff!important;}
-      .invoice h1,.invoice h2,.invoice h3,.invoice h4,
-      .invoice strong,.invoice b,.invoice .total,
-      .invoice-customer-label,.invoice-customer-name,
-      .invoice-package-title,.invoice-line-service-name{
-        color:#171717!important;
-      }
-      .invoice .muted,
-      .invoice .invoice-customer-line,
-      .invoice .invoice-customer-details,
-      .invoice .invoice-package-services,
-      .invoice .invoice-line-services,
-      .invoice .invoice-terms-intro{
-        color:#444!important;
-      }
-      .invoice table th,.invoice table td{
-        color:#222!important;
-        border-color:#b8b8b8!important;
-      }
-      .invoice .payment-structure,
-      .invoice .payment-structure *,
-      .invoice .invoice-terms,
-      .invoice .invoice-terms *{
-        color:#222!important;
-      }
-      .invoice .payment-structure .muted,
-      .invoice .invoice-terms .muted{
-        color:#555!important;
-      }
-      .invoice .right,
-      .invoice .right *{
-        color:#171717!important;
-      }
-    `;
-    root.prepend(style);
   }
 
   async function renderNode(node){
     const holder=makeHolder();
     const clone=node.cloneNode(true);
     cleanup(clone);
+
+    // WhatsApp PDF only: keep the normal Print / Save PDF untouched, but
+    // force readable text when html2canvas rasterizes the invoice. Some of
+    // the app's dark-theme/inherited rules can otherwise produce very pale
+    // text on the white PDF canvas.
+    const readability=document.createElement('style');
+    readability.textContent=`
+      .invoice, .invoice *{
+        opacity:1 !important;
+        visibility:visible !important;
+        filter:none !important;
+      }
+      .invoice{
+        background:#fff !important;
+        color:#111 !important;
+        -webkit-text-fill-color:#111 !important;
+      }
+      .invoice h1,.invoice h2,.invoice h3,.invoice h4,.invoice h5,.invoice h6,
+      .invoice b,.invoice strong,.invoice td,.invoice th,.invoice p,
+      .invoice span,.invoice div,.invoice li,.invoice label{
+        color:#111 !important;
+        -webkit-text-fill-color:#111 !important;
+        text-shadow:none !important;
+      }
+      .invoice .muted,.invoice th,.invoice .invoice-shoot-title span,
+      .invoice .invoice-package-services,.invoice .invoice-line-services,
+      .invoice .invoice-terms-intro{
+        color:#555 !important;
+        -webkit-text-fill-color:#555 !important;
+      }
+      .invoice .empty{color:#666 !important;-webkit-text-fill-color:#666 !important;}
+      .invoice img{opacity:1 !important;filter:none !important;}
+    `;
+    holder.appendChild(readability);
+
     clone.style.cssText=[
-      'width:794px','max-width:794px','background:#fff','color:#171717',
-      'margin:0','padding:0','box-sizing:border-box','opacity:1'
+      'width:794px','max-width:794px','background:#fff','color:#111',
+      'margin:0','padding:0','box-sizing:border-box','opacity:1','visibility:visible',
+      'filter:none','-webkit-text-fill-color:#111'
     ].join(';');
-    injectPdfReadability(clone);
     holder.appendChild(clone);
     try{
       const canvas=await html2canvas(clone,{
-        scale:3,useCORS:true,backgroundColor:'#fff',
-        logging:false,windowWidth:794,imageTimeout:15000,
-        letterRendering:true,
-        allowTaint:false
+        scale:2,useCORS:true,backgroundColor:'#fff',
+        logging:false,windowWidth:794,imageTimeout:15000
       });
       addCanvasPages(canvas,getSafeCuts(clone));
     }finally{
@@ -6160,7 +6191,6 @@ window.rkCloudSyncSettings=async function(){
     welcome_enabled:s?.welcome?.enabled!==false,welcome_title:s?.welcome?.title||null,welcome_message:s?.welcome?.message||null,welcome_duration_ms:Number(s?.welcome?.duration||1400),
     whatsapp_templates:s?.waTemplates||{},extra_services:s?.extraServices||[],custom_settings:s||{}};}
   function applySettings(r){if(!r)return;const e=r.custom_settings||{};db.settings={...db.settings,...e,studio:r.studio_name||e.studio||'RK Studio',phone:r.phone||e.phone||'',address:r.address||e.address||'',companyLogoPath:r.company_logo_path||e.companyLogoPath||'',primary:r.primary_color||e.primary||'#6c4df6',secondary:r.secondary_color||e.secondary||'#9a84ff',background:r.background_color||e.background||'#f5f6fa',cardColor:r.card_color||e.cardColor||'#fff',theme:r.theme||e.theme||'light',sidebar:r.sidebar_style||e.sidebar||'dark',sidebarColor:r.sidebar_color||e.sidebarColor||'#17151f',compact:r.compact||e.compact||'no',sidebarWidth:Number(r.sidebar_width||e.sidebarWidth||245),radius:Number(r.radius||e.radius||15),fontSize:Number(r.font_size||e.fontSize||16),fontFamily:r.font_family||e.fontFamily||'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:r.shadow||e.shadow||'soft',cardBorder:r.card_border||e.cardBorder||'on',buttonStyle:r.button_style||e.buttonStyle||'rounded',extraServices:r.extra_services||e.extraServices||[]};}
-  window.rkApplySettingsFromCloud=applySettings;
 
   async function hydrate(){
     if(!isCloud())return false;
@@ -6256,12 +6286,11 @@ window.rkCloudSyncSettings=async function(){
   async function syncSettingsNow(){
     try{
       if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase' || !window.RK_CLOUD_READY) return false;
-      const {data,error}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
-      if(error) throw error;
-      if(!data || typeof window.rkApplySettingsFromCloud!=='function') return false;
+      const {data,rowError}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
+      if(rowError) throw rowError;
+      if(!data || typeof window.rowToSettings!=='function') return false;
+      const next=window.rowToSettings(data);
       const before=JSON.stringify(db.settings||{});
-      window.rkApplySettingsFromCloud(data);
-      const next=db.settings||{};
       const after=JSON.stringify(next||{});
       if(before!==after){
         db.settings=next;
@@ -6328,101 +6357,16 @@ window.rkCloudSyncSettings=async function(){
   // propagate even when the Supabase project has not enabled Realtime for
   // studio_settings yet. It also runs immediately when the page becomes visible.
   let timer=null;
-  async function refreshVisible(){
-    if(document.hidden || sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return;
-    try{
-      if(typeof window.rkCloudHydratePhase3==='function') await window.rkCloudHydratePhase3();
-      if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
-    }catch(e){ console.warn('Periodic cloud refresh failed:',e); }
-    await syncSettingsNow();
-  }
   function start(){
     clearInterval(timer);
-    timer=setInterval(refreshVisible,10000);
-    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshVisible(); });
+    timer=setInterval(()=>{ if(!document.hidden) syncSettingsNow(); },5000);
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncSettingsNow(); });
   }
   start();
-  refreshVisible();
-})();
-</script>
-<script id="rk-v169-instant-cloud-on-open">
-(function(){
-  /* Instant server refresh on every deployed app open/return.
-     Runs only after a real Supabase session exists, never for local file/localhost mode. */
-  let refreshing=false;
-  let refreshPromise=null;
-  async function waitForEngine(timeoutMs=15000){
-    const start=Date.now();
-    while(typeof window.rkCloudHydratePhase3!=='function'){
-      if(Date.now()-start>timeoutMs) return false;
-      await new Promise(r=>setTimeout(r,20));
-    }
-    return true;
-  }
-  async function refreshNow(reason){
-    if(!window.RK_DEPLOYED_MODE) return true;
-    if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return false;
-    if(refreshing && refreshPromise) return refreshPromise;
-    refreshing=true;
-    refreshPromise=(async()=>{
-      try{
-        const ready=await waitForEngine();
-        if(!ready) throw new Error('Cloud sync engine not ready');
-        if(typeof window.status==='function') window.status('syncing','Syncing latest server data…');
-        const ok=await window.rkCloudHydratePhase3();
-        if(!ok) throw new Error(window.RK_CLOUD_LAST_ERROR||'Cloud refresh failed');
-        if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
-        window.RK_CLOUD_LAST_ERROR='';
-        if(typeof window.status==='function') window.status('synced','Latest server data loaded.');
-        return true;
-      }catch(e){
-        console.error('Instant cloud refresh failed:',reason,e);
-        window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
-        if(typeof window.status==='function') window.status('local','Cloud refresh failed: '+window.RK_CLOUD_LAST_ERROR);
-        return false;
-      }finally{
-        refreshing=false;
-        refreshPromise=null;
-      }
-    })();
-    return refreshPromise;
-  }
-  window.rkRefreshCloudNow=refreshNow;
-
-  window.addEventListener('DOMContentLoaded',()=>{
-    // Session restoration/login already performs a blocking hydration before app display.
-    // This second call guarantees a fresh server read immediately after the page is mounted.
-    setTimeout(()=>{ refreshNow('startup'); },0);
-  },{once:true});
-
-  window.addEventListener('pageshow',()=>{ refreshNow('pageshow'); });
-  document.addEventListener('visibilitychange',()=>{
-    if(!document.hidden) refreshNow('visibility');
-  });
+  syncSettingsNow();
 })();
 </script>
 </html>
-
-<style id="rk-v171-pdf-print-readability">
-@media print{
-  .invoice,
-  .invoice *{
-    opacity:1!important;
-    -webkit-print-color-adjust:exact!important;
-    print-color-adjust:exact!important;
-  }
-  .invoice .muted,
-  .invoice .invoice-package-services,
-  .invoice .invoice-line-services,
-  .invoice .invoice-terms-intro{
-    color:#444!important;
-  }
-  .invoice table th,
-  .invoice table td{
-    color:#222!important;
-  }
-}
-</style>
 <style id="v90-pdf-smart-pagination">
 @media print{
   .invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,
@@ -6586,55 +6530,4 @@ select option{
 
 <style id="rk-v156-cloud-status-cleanup">
 .rk-cloud-status-row{display:none!important}
-</style>
-
-<style id="rk-invoice-customer-photo-left">
-.invoice-customer-block{
-  display:flex!important;
-  align-items:flex-start!important;
-  gap:14px!important;
-  width:100%!important;
-  padding:14px 0!important;
-  box-sizing:border-box!important;
-}
-.invoice-customer-photo-wrap{
-  flex:0 0 auto!important;
-  width:58px!important;
-  min-width:58px!important;
-  display:flex!important;
-  align-items:flex-start!important;
-  justify-content:flex-start!important;
-}
-.invoice-customer-photo-wrap .avatar,
-.invoice-customer-photo-wrap img{
-  width:58px!important;
-  height:58px!important;
-  min-width:58px!important;
-  max-width:58px!important;
-  max-height:58px!important;
-  border-radius:50%!important;
-  object-fit:cover!important;
-  display:block!important;
-}
-.invoice-customer-details{
-  flex:1 1 auto!important;
-  min-width:0!important;
-  padding-top:1px!important;
-  text-align:left!important;
-  line-height:1.45!important;
-}
-.invoice-customer-label{
-  font-weight:800!important;
-  margin-bottom:2px!important;
-}
-.invoice-customer-name{
-  font-weight:600!important;
-}
-.invoice-customer-line{
-  color:inherit!important;
-  font-size:13px!important;
-}
-@media print{
-  .invoice-customer-block{page-break-inside:avoid!important;}
-}
 </style>
