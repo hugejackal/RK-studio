@@ -5762,6 +5762,189 @@ window.rkCloudSyncSettings=async function(){
   };
 })();
 </script>
+
+<script id="rk-share-invoice-one-tap-final">
+(function(){
+  const SHARE_PAGE_W = 794;
+  const A4_W = 210;
+  const A4_H = 297;
+  const MARGIN_MM = 10;
+
+  function normalizePrintClone(node){
+    const clone=node.cloneNode(true);
+    clone.querySelectorAll('.invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,.invoice-action-bar,.print-hide,button').forEach(el=>el.remove());
+    clone.querySelectorAll('a[href]').forEach(a=>a.removeAttribute('href'));
+
+    // Reproduce the native print appearance rather than the dark application theme.
+    clone.style.cssText = 'width:794px!important;max-width:794px!important;background:#fff!important;color:#111!important;margin:0!important;padding:0!important;box-sizing:border-box!important;overflow:visible!important;font-family:Arial,sans-serif!important;';
+    clone.classList.remove('dark','theme-dark');
+
+    clone.querySelectorAll('.muted').forEach(el=>{
+      el.style.setProperty('color','#555','important');
+      el.style.setProperty('opacity','1','important');
+      el.style.setProperty('visibility','visible','important');
+    });
+    clone.querySelectorAll('th,td,h1,h2,h3,h4,h5,h6,p,div,span,b,strong').forEach(el=>{
+      const cs=getComputedStyle(el);
+      if(cs.color==='rgb(255, 255, 255)' || cs.color==='rgb(244, 244, 247)' || cs.color==='rgb(234, 234, 239)'){
+        el.style.setProperty('color','#111','important');
+      }
+      if(cs.opacity && Number(cs.opacity)<1) el.style.setProperty('opacity','1','important');
+    });
+
+    // Keep customer photo + details horizontal and vertically centered.
+    const cblock=clone.querySelector('.invoice-customer-block');
+    if(cblock){
+      cblock.style.setProperty('display','flex','important');
+      cblock.style.setProperty('align-items','center','important');
+      cblock.style.setProperty('gap','12px','important');
+      const ph=cblock.querySelector('.invoice-customer-photo');
+      if(ph){
+        ph.style.setProperty('width','62px','important');
+        ph.style.setProperty('min-width','62px','important');
+        ph.style.setProperty('height','62px','important');
+        ph.style.setProperty('display','flex','important');
+        ph.style.setProperty('align-items','center','important');
+        ph.style.setProperty('justify-content','center','important');
+      }
+      const av=cblock.querySelector('.invoice-customer-photo .avatar');
+      if(av){
+        av.style.setProperty('width','62px','important');
+        av.style.setProperty('height','62px','important');
+      }
+      const det=cblock.querySelector('.invoice-customer-details');
+      if(det){
+        det.style.setProperty('color','#111','important');
+        det.style.setProperty('opacity','1','important');
+      }
+    }
+
+    // Keep logo proportional and crisp.
+    const logo=clone.querySelector('.rk-invoice-logo');
+    if(logo){
+      logo.style.setProperty('max-width','240px','important');
+      logo.style.setProperty('height','auto','important');
+      logo.style.setProperty('object-fit','contain','important');
+    }
+
+    return clone;
+  }
+
+  async function buildSharePdfBlob(invoiceId){
+    if(!window.html2canvas || !window.jspdf) throw new Error('PDF libraries are not loaded.');
+    const source=document.querySelector('#invoices .invoice');
+    if(!source) throw new Error('Invoice is not open.');
+
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
+    const usableW=A4_W-MARGIN_MM*2;
+    const usableH=A4_H-MARGIN_MM*2;
+    let hasPage=false;
+
+    const holder=document.createElement('div');
+    holder.style.cssText='position:fixed;left:-100000px;top:0;width:794px;background:#fff;color:#111;z-index:-1;overflow:visible;font-family:Arial,sans-serif;';
+    document.body.appendChild(holder);
+
+    const main=normalizePrintClone(source);
+    // Terms are part of the source invoice DOM in the existing print workflow.
+    holder.appendChild(main);
+
+    // Inject a print-like ruleset into the holder.
+    const style=document.createElement('style');
+    style.textContent=`
+      *{box-sizing:border-box!important}
+      html,body{background:#fff!important;color:#111!important;margin:0!important;padding:0!important;overflow:visible!important}
+      .invoice{border:0!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important;background:#fff!important;color:#111!important}
+      .muted{color:#555!important;opacity:1!important}
+      .invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,.invoice-action-bar,.print-hide{display:none!important}
+      .invoice-customer-block{display:flex!important;align-items:center!important}
+      table{border-collapse:collapse!important}
+      th{color:#111!important;font-weight:700!important}
+      td{color:#111!important}
+    `;
+    holder.prepend(style);
+
+    const canvas=await html2canvas(holder,{scale:2.5,useCORS:true,allowTaint:false,backgroundColor:'#fff',logging:false,windowWidth:794,imageTimeout:15000,scrollX:0,scrollY:0});
+
+    // Add terms/extra sections that native print keeps after the main invoice.
+    // If they are already inside the clone, this is a no-op.
+    const pxPerMm=canvas.width/usableW;
+    const pagePx=Math.floor(usableH*pxPerMm);
+    let y=0;
+    while(y<canvas.height-2){
+      if(hasPage) pdf.addPage();
+      hasPage=true;
+      const remaining=canvas.height-y;
+      const sliceH=Math.min(pagePx,remaining);
+      const slice=document.createElement('canvas');
+      slice.width=canvas.width;
+      slice.height=Math.ceil(sliceH);
+      const ctx=slice.getContext('2d');
+      ctx.fillStyle='#fff';ctx.fillRect(0,0,slice.width,slice.height);
+      ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
+      pdf.addImage(slice.toDataURL('image/png'),'PNG',MARGIN_MM,MARGIN_MM,usableW,(slice.height*usableW)/slice.width,undefined,'FAST');
+      y+=sliceH;
+    }
+
+    holder.remove();
+    if(!hasPage) throw new Error('Unable to render invoice.');
+    return pdf.output('blob');
+  }
+
+  function previewShareInvoicePDF(invoiceId){
+    const overlay=document.createElement('div');
+    overlay.className='rk-share-preview-overlay';
+    overlay.innerHTML=`<div class="rk-share-preview-box"><div class="rk-share-preview-head"><div><strong>📄 Invoice Preview</strong><div class="rk-share-preview-sub">This PDF will be shared</div></div><button type="button" class="rk-share-preview-close">×</button></div><div class="rk-share-preview-body"><div class="rk-share-loading">Creating PDF preview…</div></div><div class="rk-share-preview-actions"><button type="button" class="btn secondary rk-share-preview-cancel">Close</button><button type="button" class="btn rk-share-now" disabled>📤 Share Invoice PDF</button></div></div>`;
+    document.body.appendChild(overlay);
+    const close=()=>overlay.remove();
+    overlay.querySelector('.rk-share-preview-close').onclick=close;
+    overlay.querySelector('.rk-share-preview-cancel').onclick=close;
+
+    (async()=>{
+      try{
+        const blob=await buildSharePdfBlob(invoiceId);
+        const url=URL.createObjectURL(blob);
+        const body=overlay.querySelector('.rk-share-preview-body');
+        body.innerHTML=`<iframe title="Invoice PDF preview" src="${url}" style="width:100%;height:100%;border:0;background:#fff"></iframe>`;
+        const shareBtn=overlay.querySelector('.rk-share-now');
+        shareBtn.disabled=false;
+        shareBtn.onclick=async()=>{
+          const inv=(db.invoices||[]).find(x=>String(x.id)===String(invoiceId));
+          const customer=(db.customers||[]).find(x=>String(x.id)===String(inv?.customerId))||{};
+          const file=new File([blob],`Invoice-${String(inv?.number||invoiceId).replace(/[^a-z0-9_-]/gi,'-')}.pdf`,{type:'application/pdf'});
+          try{
+            if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+              await navigator.share({title:`Invoice ${inv?.number||''} — ${db.settings?.studio||'RK Studio'}`,text:`Invoice ${inv?.number||''}`,files:[file]});
+            }else{
+              const a=document.createElement('a');
+              const u=URL.createObjectURL(file);
+              a.href=u;a.download=file.name;document.body.appendChild(a);a.click();a.remove();
+              setTimeout(()=>URL.revokeObjectURL(u),3000);
+              window.open('https://wa.me/?text='+encodeURIComponent(`Invoice ${inv?.number||''} is attached in your downloads.`),'_blank');
+            }
+          }catch(e){
+            if(e?.name!=='AbortError') alert('Share failed. Please try again.');
+          }
+        };
+      }catch(e){
+        console.error('Share Invoice PDF failed:',e);
+        overlay.querySelector('.rk-share-preview-body').innerHTML='<div class="rk-share-loading">Unable to create the PDF preview. Please use Print / Save PDF.</div>';
+      }
+    })();
+  }
+
+  window.previewShareInvoicePDF=previewShareInvoicePDF;
+})();
+</script>
+<style id="rk-share-preview-style">
+.rk-share-preview-overlay{position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:300000;display:flex;align-items:center;justify-content:center;padding:18px}
+.rk-share-preview-box{width:min(1000px,96vw);height:min(900px,94vh);background:#fff;border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 30px 90px rgba(0,0,0,.45)}
+.rk-share-preview-head{height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:#171922;color:#fff}
+.rk-share-preview-head strong{font-size:16px}.rk-share-preview-sub{font-size:11px;opacity:.72;margin-top:2px}.rk-share-preview-close{background:none!important;border:0!important;color:#fff!important;font-size:28px!important;cursor:pointer}
+.rk-share-preview-body{flex:1;min-height:0;background:#2f2f2f}.rk-share-preview-body iframe{width:100%;height:100%}.rk-share-loading{height:100%;display:flex;align-items:center;justify-content:center;color:#333;background:#fff;font-weight:700}
+.rk-share-preview-actions{display:flex;justify-content:flex-end;gap:10px;padding:12px 16px;background:#fff;border-top:1px solid #ddd}
+@media(max-width:700px){.rk-share-preview-overlay{padding:0}.rk-share-preview-box{width:100vw;height:100vh;border-radius:0}.rk-share-preview-actions{padding-bottom:calc(12px + env(safe-area-inset-bottom))}}
+</style>
 </body>
 <script id="rk-v167-server-authoritative-multiplayer">
 (function(){
