@@ -2983,13 +2983,13 @@ async function openInvoiceView(id){
     <div class="invoicehead">
       <div>${db.settings?.companyLogo?`<img class="rk-invoice-logo" src="${db.settings.companyLogo}" alt="Company Logo">`:``}
         <h2>${esc(db.settings?.studio||"RK Studio")}</h2>
-        <div class="muted">${esc(db.settings?.address||"")}</div>
-        <div class="muted">${esc(db.settings?.phone||"")}</div>
+        <div class="muted"><b>Add:</b> ${esc(db.settings?.address||"")}</div>
+        <div class="muted"><b>Mob:</b> ${esc(db.settings?.phone||"")}</div>
       </div>
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
+    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div class="invoice-customer-details"><b>Bill To</b><br><b>Name:</b> ${esc(c.name||"")}<br><b>Mob:</b> ${esc(c.phone||"")}<br><b>Venue:</b> ${esc(c.venue||"")}</div></div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
