@@ -4848,46 +4848,78 @@ async function rkCreateInvoicePDFBlob(invoiceId){
     const holder=makeHolder();
     const clone=node.cloneNode(true);
     cleanup(clone);
-
-    // WhatsApp PDF only: keep the normal Print / Save PDF untouched, but
-    // force readable text when html2canvas rasterizes the invoice. Some of
-    // the app's dark-theme/inherited rules can otherwise produce very pale
-    // text on the white PDF canvas.
-    const readability=document.createElement('style');
-    readability.textContent=`
-      .invoice, .invoice *{
-        opacity:1 !important;
-        visibility:visible !important;
-        filter:none !important;
-      }
-      .invoice{
-        background:#fff !important;
-        color:#111 !important;
-        -webkit-text-fill-color:#111 !important;
-      }
-      .invoice h1,.invoice h2,.invoice h3,.invoice h4,.invoice h5,.invoice h6,
-      .invoice b,.invoice strong,.invoice td,.invoice th,.invoice p,
-      .invoice span,.invoice div,.invoice li,.invoice label{
-        color:#111 !important;
-        -webkit-text-fill-color:#111 !important;
-        text-shadow:none !important;
-      }
-      .invoice .muted,.invoice th,.invoice .invoice-shoot-title span,
-      .invoice .invoice-package-services,.invoice .invoice-line-services,
-      .invoice .invoice-terms-intro{
-        color:#555 !important;
-        -webkit-text-fill-color:#555 !important;
-      }
-      .invoice .empty{color:#666 !important;-webkit-text-fill-color:#666 !important;}
-      .invoice img{opacity:1 !important;filter:none !important;}
-    `;
-    holder.appendChild(readability);
-
+    clone.classList.add('rk-whatsapp-pdf-render');
     clone.style.cssText=[
       'width:794px','max-width:794px','background:#fff','color:#111',
-      'margin:0','padding:0','box-sizing:border-box','opacity:1','visibility:visible',
-      'filter:none','-webkit-text-fill-color:#111'
+      'margin:0','padding:0','box-sizing:border-box',
+      'border:0!important','border-radius:0!important','box-shadow:none!important'
     ].join(';');
+
+    // WhatsApp PDF only: keep the same overall invoice design, but make the
+    // rasterized copy print-safe and readable regardless of the app's theme.
+    const pdfStyle=document.createElement('style');
+    pdfStyle.textContent=`
+      .rk-whatsapp-pdf-render,
+      .rk-whatsapp-pdf-render *{box-sizing:border-box!important;}
+      .rk-whatsapp-pdf-render{
+        color:#111!important;background:#fff!important;
+        border:0!important;border-radius:0!important;box-shadow:none!important;
+      }
+      .rk-whatsapp-pdf-render .invoicehead{
+        display:flex!important;flex-direction:row!important;
+        align-items:flex-start!important;justify-content:space-between!important;
+        gap:20px!important;
+      }
+      .rk-whatsapp-pdf-render .rk-invoice-logo{
+        width:180px!important;max-width:180px!important;
+        height:70px!important;max-height:70px!important;
+        object-fit:contain!important;object-position:left top!important;
+        display:block!important;
+      }
+      .rk-whatsapp-pdf-render .invoice-customer-block{
+        display:flex!important;flex-direction:row!important;
+        align-items:center!important;gap:14px!important;
+        flex-wrap:nowrap!important;
+      }
+      .rk-whatsapp-pdf-render .invoice-customer-photo,
+      .rk-whatsapp-pdf-render .invoice-customer-photo .avatar{
+        width:62px!important;min-width:62px!important;
+        height:62px!important;max-width:62px!important;max-height:62px!important;
+        flex:0 0 62px!important;
+      }
+      .rk-whatsapp-pdf-render .invoice-customer-photo img.avatar{
+        object-fit:cover!important;border-radius:50%!important;
+      }
+      .rk-whatsapp-pdf-render .invoice-customer-details{
+        color:#111!important;font-size:13px!important;line-height:1.45!important;
+      }
+      .rk-whatsapp-pdf-render .invoice-customer-details b{color:#111!important;}
+      .rk-whatsapp-pdf-render .muted,
+      .rk-whatsapp-pdf-render th,
+      .rk-whatsapp-pdf-render td,
+      .rk-whatsapp-pdf-render .invoice-line-services,
+      .rk-whatsapp-pdf-render .invoice-package-services,
+      .rk-whatsapp-pdf-render .invoice-package-preview-label,
+      .rk-whatsapp-pdf-render .invoice-package-preview-list,
+      .rk-whatsapp-pdf-render .invoice-shoot-title span,
+      .rk-whatsapp-pdf-render .invoice-terms-intro,
+      .rk-whatsapp-pdf-render .invoice-term{
+        color:#333!important;
+        -webkit-text-fill-color:#333!important;
+      }
+      .rk-whatsapp-pdf-render th{font-weight:800!important;color:#222!important;-webkit-text-fill-color:#222!important;}
+      .rk-whatsapp-pdf-render td,.rk-whatsapp-pdf-render th{
+        border-color:#777!important;
+      }
+      .rk-whatsapp-pdf-render .invoice-package-block,
+      .rk-whatsapp-pdf-render .invoice-shoot-row,
+      .rk-whatsapp-pdf-render .invoice-deliverables-block,
+      .rk-whatsapp-pdf-render .invoice-terms,
+      .rk-whatsapp-pdf-render .payment-structure{
+        color:#111!important;
+      }
+    `;
+    clone.prepend(pdfStyle);
     holder.appendChild(clone);
     try{
       const canvas=await html2canvas(clone,{
