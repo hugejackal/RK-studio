@@ -2254,13 +2254,21 @@ try{
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
 const KEY='shaadiStudio_v1';
+/* RK Studio server-authoritative mode: Supabase is the source of truth. */
+const RK_SERVER_ONLY=true;
 let db=null;
-try{ db=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ db=null; }
+if(!RK_SERVER_ONLY){
+  try{ db=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ db=null; }
+}
 db=db||{
 settings:{studio:"RK Studio",phone:"",address:""},
 customers:[],events:[],invoices:[],packages:[{id:"p1",name:"Classic Wedding",price:55000,items:["Traditional Photography","Full Wedding Video","1 Premium Album","All Edited Photos"]},{id:"p2",name:"Premium Wedding",price:85000,items:["Candid + Traditional Photography","Cinematic Wedding Film","2 Premium Albums","Drone Coverage","All Edited Photos"]},{id:"p3",name:"Royal Wedding",price:125000,items:["2 Photographers","2 Videographers","Cinematic Film","Drone + 4K Coverage","2 Premium Albums","Pre-Wedding Shoot","All Edited Photos"]}]
 };
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));if(window.rkCloudScheduleSave) window.rkCloudScheduleSave();return true;}catch(e){console.error('RK Studio save failed',e);return false;}}
+const save=()=>{try{
+  if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
+  if(window.rkCloudScheduleSave) window.rkCloudScheduleSave();
+  return true;
+}catch(e){console.error('RK Studio save failed',e);return false;}}
 const DEFAULT_ROLES={
   admin:{name:'Administrator',permissions:['dashboard','customers','events','packages','invoices','management','activity','settings','userManagement','customerCreate','customerEdit','customerDelete','shootCreate','shootEdit','shootDelete','packageManage','invoiceCreate','invoiceEdit','invoiceDelete','paymentAdd','paymentDelete','expenseManage']},
   manager:{name:'Manager',permissions:['dashboard','customers','events','packages','invoices','management','settings','customerCreate','customerEdit','shootCreate','shootEdit','shootDelete','packageManage','invoiceCreate','invoiceEdit','paymentAdd','expenseManage']},
@@ -2843,6 +2851,8 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(124,58,237,.10
 </head><body>${printClone.outerHTML}
 
 
+
+
 </body></html>`);
   w.document.close();
   w.onload=()=>{
@@ -3006,7 +3016,7 @@ async function openInvoiceView(id){
         c=mapped;
         const idx=(db.customers||[]).findIndex(x=>String(x.id)===String(mapped.id));
         if(idx>=0)db.customers[idx]=mapped; else db.customers.push(mapped);
-        localStorage.setItem(KEY,JSON.stringify(db));
+        if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
       }
     }catch(e){console.warn('Invoice customer cloud lookup failed:',e)}
   }
@@ -3174,7 +3184,7 @@ async function sendWhatsApp(invoiceId){
         c=mapped;
         const idx=(db.customers||[]).findIndex(v=>String(v.id)===String(mapped.id));
         if(idx>=0)db.customers[idx]=mapped; else db.customers.push(mapped);
-        localStorage.setItem(KEY,JSON.stringify(db));
+        if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
       }
     }catch(e){
       console.warn('WhatsApp customer lookup failed:',e);
@@ -3775,8 +3785,8 @@ settings.innerHTML=`<div class="top"><div><h1>Settings</h1><div class="sub">RK S
 </div>
 <div class="card" style="margin-top:16px"><h3>💬 WhatsApp Message Templates</h3><p class="muted">Customize default WhatsApp messages before sharing.</p><button class="btn" onclick="openWhatsAppTemplateSettings()">✏️ Edit WhatsApp Templates</button></div>
 <div class="card" style="margin-top:16px"><div class="top" style="margin-bottom:12px"><div><h3>🛡️ Role & Permission Management</h3><p class="muted">Create custom roles and choose exactly which pages and actions each role can use.</p></div><button class="btn" onclick="openRoleModal()">+ Add Role</button></div><div class="tablewrap"><table><tr><th>Role</th><th>Permissions</th><th>Actions</th></tr>${Object.entries(db.roles||DEFAULT_ROLES).map(([k,r])=>`<tr><td><b>${esc(r.name||k)}</b>${['admin','manager','photographer','editor'].includes(k)?' <span class="tag">Built-in</span>':''}</td><td>${(r.permissions||[]).length} permissions</td><td>${k==='admin'?'<span class="muted">Protected</span>':`<button class="small" onclick="openRoleModal('${k}')">Edit Permissions</button> <button class="small danger" onclick="deleteRole('${k}')">Delete</button>`}</td></tr>`).join('')}</table></div></div><div class="card" style="margin-top:16px" id="userManagementCard"><div class="top" style="margin-bottom:12px"><div><h3>👥 User & Role Management</h3><p class="muted">Create team logins, assign roles and disable access when needed.</p></div><button class="btn" onclick="openUserModal()">+ Add User</button></div><div style="overflow:auto"><table class="users-table"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead><tbody>${(db.users||[]).map(u=>`<tr><td><b>${esc(u.name||u.username)}</b></td><td>${esc(u.username)}</td><td>${esc(u.email||"—")}</td><td><span class="role-badge">${esc(ROLE_LABELS[u.role]||u.role)}</span></td><td>${u.active!==false?'Active':'Disabled'}</td><td><button class="small" onclick="openUserModal('${u.id}')">Edit</button> <button class="small danger" onclick="deleteUser('${u.id}')" ${u.id===currentUser?.id?'disabled':''}>Delete</button></td></tr>`).join('')}</tbody></table></div><div class="permission-note" style="margin-top:10px">Admin: full access · Manager: operational + settings · Photographer: dashboard, customers, shoots · Editor: dashboard, customers, shoots, invoices.</div></div><div class="card" style="margin-top:16px"><h3>🔐 Login & Password</h3><p class="muted">Change the password used to protect this RK Studio browser. You will need the new password on the next login.</p><div class="security-box"><div><label class="label">Current Password</label><input id="currentPassword" type="password" autocomplete="current-password" placeholder="Current password"></div><div><label class="label">New Password</label><input id="newPassword" type="password" autocomplete="new-password" placeholder="New password"></div><div class="full"><label class="label">Confirm New Password</label><input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirm new password"></div><button class="btn" type="button" onclick="changePassword()">Change Password</button></div></div>
-<div class="card" style="margin-top:16px"><h3>💾 Data & Backup</h3><p class="muted">Your RK Studio data is stored in this browser. Create a backup regularly so you can restore customers, shoots, invoices, payments, expenses, packages, users, settings and other app data if needed.</p><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="backupStudioData()">⬇️ Backup Data</button><button class="btn secondary" onclick="document.getElementById('rkRestoreFile').click()">⬆️ Restore Data</button><input id="rkRestoreFile" type="file" accept="application/json,.json" hidden onchange="restoreStudioData(event)"></div><div class="muted" style="margin-top:10px;font-size:12px">Manual backup downloads a JSON file. Auto Backup saves a private snapshot in this browser every 15 minutes while RK Studio is open. Keep manual backups somewhere safe for protection against browser/device data loss.</div></div>
-<div class="card" style="margin-top:16px"><h3>🔄 Auto Backup</h3><p class="muted">Automatically save a local backup snapshot every 15 minutes while this app is open.</p><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px"><label style="display:flex;align-items:center;gap:9px;font-weight:700"><input id="rkAutoBackupToggle" type="checkbox" onchange="toggleAutoBackup(this.checked)"> Enable Auto Backup</label><span id="rkAutoBackupStatus" class="muted" style="font-size:12px"></span></div><div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn secondary" onclick="restoreLatestAutoBackup()">↩️ Restore Latest Auto Backup</button></div></div><div class="card" style="margin-top:16px"><h3>Data</h3><p class="muted">This prototype stores data in this browser using localStorage. Customer photos and payment screenshots are also stored locally.</p><button class="small danger" onclick="resetData()">Reset all data</button></div>`;
+<div class="card" style="margin-top:16px"><h3>💾 Data & Backup</h3><p class="muted">Your RK Studio data is stored in this browser. Create a backup regularly so you can restore customers, shoots, invoices, payments, expenses, packages, users, settings and other app data if needed.</p><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px"><button class="btn" onclick="backupStudioData()">⬇️ Backup Data</button><button class="btn secondary" onclick="document.getElementById('rkRestoreFile').click()">⬆️ Restore Data</button><input id="rkRestoreFile" type="file" accept="application/json,.json" hidden onchange="restoreStudioData(event)"></div><div class="muted" style="margin-top:10px;font-size:12px">Manual backup downloads a JSON file. Supabase Cloud is the source of truth; browser localStorage is not used for the app database. Keep manual backups somewhere safe for protection against browser/device data loss.</div></div>
+<div class="card" style="margin-top:16px"><h3>🔄 Auto Backup</h3><p class="muted">Automatically save a local backup snapshot every 15 minutes while this app is open.</p><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px"><label style="display:flex;align-items:center;gap:9px;font-weight:700"><input id="rkAutoBackupToggle" type="checkbox" onchange="toggleAutoBackup(this.checked)"> Enable Auto Backup</label><span id="rkAutoBackupStatus" class="muted" style="font-size:12px"></span></div><div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap"><button class="btn secondary" onclick="restoreLatestAutoBackup()">↩️ Restore Latest Auto Backup</button></div></div><div class="card" style="margin-top:16px"><h3>Data</h3><p class="muted">Your RK Studio operational data is stored in Supabase Cloud. This browser does not store the app database. Customer photos and payment screenshots are also stored locally.</p><button class="small danger" onclick="resetData()">Reset all data</button></div>`;
 }
 if(window.rkGuardWelcomeSettings) rkGuardWelcomeSettings();
 
@@ -3848,6 +3858,7 @@ const AUTO_BACKUP_ENABLED_KEY='rkStudioAutoBackupEnabled';
 const AUTO_BACKUP_INTERVAL=15*60*1000;
 let autoBackupTimer=null;
 function createAutoBackupSnapshot(showToast=false){
+  if(RK_SERVER_ONLY){updateAutoBackupStatus();return;}
   try{
     const payload={app:'RK Studio',version:'v133',backupDate:new Date().toISOString(),storageKey:KEY,data:db};
     localStorage.setItem(AUTO_BACKUP_KEY,JSON.stringify(payload));
@@ -3876,6 +3887,7 @@ function toggleAutoBackup(enabled){
   else{clearInterval(autoBackupTimer);autoBackupTimer=null;updateAutoBackupStatus();}
 }
 function restoreLatestAutoBackup(){
+  if(RK_SERVER_ONLY)return alert('Server-only mode is enabled. Use the server-backed restore workflow.');
   if(!hasPermission('settings'))return alert('You do not have permission to restore data.');
   try{
     const raw=localStorage.getItem(AUTO_BACKUP_KEY); if(!raw)return alert('No auto backup is available yet.');
@@ -5156,18 +5168,14 @@ function customerTimeline(cid){
   async function hydrateTable(table){
     const {data,error}=await cloud().from(table.name).select('*');
     if(error)throw error;
-    const remote=data||[],local=localRows(table),remoteIds=new Set(remote.map(r=>String(r.id)));
-    const localOnly=local.filter(r=>!remoteIds.has(String(r.id)));
-    if(remote.length===0&&local.length){await push(table);return}
-    if(localOnly.length){const {error:e2}=await cloud().from(table.name).upsert(localOnly,{onConflict:'id'});if(e2)throw e2}
-    const combined=remote.concat(localOnly);
-    if(table.name==='customers')db.customers=remoteToLocal(table,combined);
-    if(table.name==='shoots')db.events=remoteToLocal(table,combined);
-    if(table.name==='packages')db.packages=remoteToLocal(table,combined);
-    if(table.name==='invoices')db.invoices=remoteToLocal(table,combined);
-    if(table.name==='payments')db.payments=remoteToLocal(table,combined);
-    if(table.name==='expenses')db.expenses=remoteToLocal(table,combined);
-    if(table.name==='activity_logs')db.activityLog=remoteToLocal(table,combined);
+    const remote=data||[];
+    if(table.name==='customers')db.customers=remoteToLocal(table,remote);
+    if(table.name==='shoots')db.events=remoteToLocal(table,remote);
+    if(table.name==='packages')db.packages=remoteToLocal(table,remote);
+    if(table.name==='invoices')db.invoices=remoteToLocal(table,remote);
+    if(table.name==='payments')db.payments=remoteToLocal(table,remote);
+    if(table.name==='expenses')db.expenses=remoteToLocal(table,remote);
+    if(table.name==='activity_logs')db.activityLog=remoteToLocal(table,remote);
   }
   async function hydrate(){
     if(!cloudSession())return false;
@@ -5182,23 +5190,55 @@ function customerTimeline(cid){
         return false;
       }
     }
-    localStorage.setItem(KEY,JSON.stringify(db)); if(typeof render==='function')render();
+    if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db)); if(typeof render==='function')render();
     status('synced','Cloud data loaded.'); window.RK_CLOUD_LAST_ERROR=''; return true;
   }
+  const dirtyQueue=new Map();
+  function markDirty(tableName,ids){
+    if(!cloudSession()||!ids)return;
+    const key=String(tableName), set=dirtyQueue.get(key)||new Set();
+    (Array.isArray(ids)?ids:[ids]).forEach(id=>{if(id!==undefined&&id!==null&&String(id)!=='')set.add(String(id));});
+    if(set.size)dirtyQueue.set(key,set);
+    if(window.rkCloudScheduleSave) window.rkCloudScheduleSave();
+  }
+  window.rkCloudMarkDirty=markDirty;
+
+  async function push(table,onlyIds=null){
+    let rows=localRows(table);
+    if(onlyIds && onlyIds.size) rows=rows.filter(x=>onlyIds.has(String(x.id)));
+    if(!rows.length)return {count:0};
+    const uid=await authUserId();
+    if((table.name==='payments'||table.name==='expenses'||table.name==='activity_logs')&&uid){
+      rows=rows.map(x=>({...x,...(table.name==='activity_logs'?{user_id:uid}:{created_by:uid})}));
+    }
+    const {error}=await cloud().from(table.name).upsert(rows,{onConflict:'id'});
+    if(error)throw new Error(`${table.name}: ${error.message||JSON.stringify(error)}`);
+    return {count:rows.length};
+  }
+
   async function syncNow(){
     if(running||!cloudSession())return; running=true;
     try{
-      status('syncing','Syncing changes…');
+      const entries=[...dirtyQueue.entries()];
+      if(!entries.length){status('synced','Cloud synced');window.RK_CLOUD_LAST_ERROR='';return;}
+      status('syncing','Saving to Supabase…');
       const failures=[];
-      for(const table of CLOUD_TABLES){
-        try{await push(table)}
-        catch(e){console.error('Cloud sync failed for',table.name,e);failures.push(e.message||String(e));}
+      for(const [tableName,ids] of entries){
+        const table=CLOUD_TABLES.find(x=>x.name===tableName);
+        if(!table){dirtyQueue.delete(tableName);continue;}
+        try{
+          await push(table,ids);
+          dirtyQueue.delete(tableName);
+        }catch(e){
+          console.error('Cloud sync failed for',table.name,e);
+          failures.push(e.message||String(e));
+        }
       }
       if(failures.length){
         status('local',`Cloud sync needs attention: ${failures[0]}`);
         window.RK_CLOUD_LAST_ERROR=failures.join(' | ');
       }else{
-        status('synced','Cloud sync complete.');
+        status('synced','Cloud synced');
         window.RK_CLOUD_LAST_ERROR='';
       }
     }finally{running=false}
@@ -5211,6 +5251,12 @@ function customerTimeline(cid){
     const ch=cloud().channel('rk-v139-'+tableName).on('postgres_changes',{event:'*',schema:'public',table:tableName},payload=>{
       try{
         const upsert=(arr,obj)=>{const i=arr.findIndex(x=>String(x.id)===String(obj.id));if(i>=0)arr[i]=obj;else arr.push(obj)};
+        if(tableName==='studio_settings'){
+          if(payload.eventType==='DELETE') db.settings={studio:'RK Studio',phone:'',address:''};
+          else if(typeof rowToSettings==='function') db.settings=rowToSettings(payload.new);
+          if(typeof applyUI==='function')applyUI();
+          if(typeof renderSettings==='function' && !document.getElementById('settings')?.classList.contains('hidden'))renderSettings();
+        }
         if(tableName==='customers'){if(payload.eventType==='DELETE')db.customers=db.customers.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.customers,rowToCustomer(payload.new))}
         if(tableName==='shoots'){if(payload.eventType==='DELETE')db.events=db.events.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.events,rowToShoot(payload.new))}
         if(tableName==='packages'){if(payload.eventType==='DELETE')db.packages=db.packages.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.packages,rowToPackage(payload.new))}
@@ -5218,7 +5264,7 @@ function customerTimeline(cid){
         if(tableName==='payments'){if(payload.eventType==='DELETE')db.payments=db.payments.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.payments,rowToPayment(payload.new))}
         if(tableName==='expenses'){if(payload.eventType==='DELETE')db.expenses=db.expenses.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.expenses,rowToExpense(payload.new))}
         if(tableName==='activity_logs'){if(payload.eventType==='DELETE')db.activityLog=db.activityLog.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.activityLog,rowToLog(payload.new))}
-        localStorage.setItem(KEY,JSON.stringify(db));
+        if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
         // Never rebuild the whole app from a background Realtime event.
         // Re-rendering here can move focus, scroll and transient UI on every page.
       }catch(e){console.warn('Realtime update skipped',e)}
@@ -5228,6 +5274,7 @@ function customerTimeline(cid){
   function startRealtime(){
     subscriptions.forEach(c=>{try{cloud().removeChannel(c)}catch(e){}});subscriptions=[];
     CLOUD_TABLES.forEach(x=>subscribe(x.name));
+    subscribe('studio_settings');
   }
   window.rkCloudStartRealtimePhase3=startRealtime;
   setTimeout(async()=>{if(cloudSession()){try{await hydrate();startRealtime()}catch(e){console.warn('Cloud bootstrap skipped',e);status('local','Cloud bootstrap failed')}}},900);
@@ -5525,6 +5572,10 @@ function customerTimeline(cid){
   }
 
   async function migrate(){
+    if(typeof RK_SERVER_ONLY!=='undefined' && RK_SERVER_ONLY){
+      setMsg('Server-only mode is active. No browser-to-cloud migration is required.','info');
+      return;
+    }
     if(!isCloud()){setMsg('Login with Supabase first.','error');return;}
     const btn=document.getElementById('rkMigrationRun');
     if(btn)btn.disabled=true;
@@ -5764,7 +5815,7 @@ window.rkCloudSyncSettings=async function(){
       if(error)throw error;
       if(data){
         db.settings=rowToSettings(data);
-        localStorage.setItem(KEY,JSON.stringify(db));
+        if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
         if(typeof applyUI==='function')applyUI();
       }
       await syncRoles();
@@ -5910,7 +5961,7 @@ window.rkCloudSyncSettings=async function(){
       seen.add(key);out.push(x);
     }
     db.activityLog=out;
-    localStorage.setItem(KEY,JSON.stringify(db));
+    if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db));
     if(typeof render==='function')render();
     return {before:logs.length,after:out.length,removed:logs.length-out.length};
   };
@@ -5964,7 +6015,337 @@ window.rkCloudSyncSettings=async function(){
   };
 })();
 </script>
+
+<script id="rk-v160-server-only-multi-user">
+(function(){
+  if(typeof RK_SERVER_ONLY==='undefined' || !RK_SERVER_ONLY) return;
+
+  const tableMap={
+    saveCustomer:['customers'], saveEvent:['shoots'], savePackage:['packages'],
+    saveInvoice:['invoices','payments'], savePayment:['payments'], saveExpense:['expenses']
+  };
+
+  function snapshotTable(table){
+    const arr=Array.isArray(db?.[table])?db[table]:[];
+    return new Map(arr.map(x=>[String(x.id),JSON.stringify(x)]));
+  }
+  function diffIds(table,before){
+    const arr=Array.isArray(db?.[table])?db[table]:[];
+    const changed=[];
+    const after=new Map(arr.map(x=>[String(x.id),JSON.stringify(x)]));
+    for(const [id,val] of after){ if(before.get(id)!==val) changed.push(id); }
+    for(const id of before.keys()){ if(!after.has(id)) changed.push(id); }
+    return [...new Set(changed)];
+  }
+
+  function wrapSave(name,tables){
+    const fn=window[name];
+    if(typeof fn!=='function' || fn.__rkServerOnlyWrapped) return;
+    const w=function(...args){
+      const before={}; tables.forEach(t=>before[t]=snapshotTable(t));
+      const result=fn.apply(this,args);
+      Promise.resolve(result).then(()=>{
+        tables.forEach(t=>{
+          const ids=diffIds(t,before[t]);
+          if(ids.length) window.rkCloudMarkDirty?.(t,ids);
+        });
+      }).catch(()=>{});
+      return result;
+    };
+    w.__rkServerOnlyWrapped=true;
+    window[name]=w;
+  }
+
+  Object.entries(tableMap).forEach(([name,tables])=>wrapSave(name,tables));
+
+  // Activity log is its own server table and is appended by rkLog().
+  wrapSave('rkLog',['activityLog']);
+
+  // Settings have a dedicated upsert path. Keep UI-only resets/logo removal in sync too.
+  ['resetUISettings','removeCompanyLogo'].forEach(name=>{
+    const fn=window[name];
+    if(typeof fn!=='function' || fn.__rkServerOnlyWrapped) return;
+    const w=function(...args){
+      const r=fn.apply(this,args);
+      Promise.resolve(window.rkCloudSyncSettings?.()).catch(e=>console.warn('Cloud settings sync failed:',e));
+      return r;
+    };
+    w.__rkServerOnlyWrapped=true;
+    window[name]=w;
+  });
+
+  // Never create browser database backups in server-only mode.
+  const oldCreateAuto=window.createAutoBackupSnapshot;
+  if(typeof oldCreateAuto==='function'){
+    window.createAutoBackupSnapshot=function(){
+      const el=document.getElementById('rkAutoBackupStatus');
+      if(el)el.textContent='Server-only mode — browser data backup disabled.';
+    };
+  }
+  const oldRestoreAuto=window.restoreLatestAutoBackup;
+  if(typeof oldRestoreAuto==='function'){
+    window.restoreLatestAutoBackup=function(){
+      alert('Server-only mode is enabled. App data is stored in Supabase Cloud.');
+    };
+  }
+
+  // Make the settings/status copy explicit.
+  const badgeText=()=>document.querySelectorAll('[data-rk-cloud-status]').forEach(el=>{
+    if(sessionStorage.getItem('rkStudioAuthProvider')==='supabase'){
+      el.title='Supabase is the source of truth for RK Studio data.';
+    }
+  });
+  setTimeout(badgeText,1500);
+})();
+</script>
+
+<style id="rk-v160-migration-server-only-note">
+#rkMigrationRun[disabled]{opacity:.65;cursor:not-allowed}
+</style>
+<script>
+(function(){
+  if(typeof RK_SERVER_ONLY==='undefined' || !RK_SERVER_ONLY) return;
+  const run=()=>{
+    const btn=document.getElementById('rkMigrationRun');
+    if(btn){btn.disabled=true;btn.title='Not required in server-only mode';}
+    const note=document.getElementById('rkMigrationMessage');
+    if(note){note.dataset.type='info';note.textContent='Server-only mode: Supabase is the source of truth. No local data migration is performed.';}
+  };
+  [700,1400,2500].forEach(ms=>setTimeout(run,ms));
+})();
+</script>
 </body>
+<script id="rk-v167-server-authoritative-multiplayer">
+(function(){
+  /*
+   * Server-authoritative data mode.
+   * - Supabase is the only persistent source for app data.
+   * - localStorage is not used for the application database.
+   * - Each browser keeps a last-server snapshot and uploads only records it
+   *   changed locally, preventing a stale second browser from overwriting
+   *   unrelated records.
+   * - Realtime updates are merged into the live UI for simultaneous users.
+   */
+  if(!window.RK_SERVER_ONLY) return;
+  const cloud=()=>window.RK_SUPABASE;
+  const isCloud=()=>!!cloud() && sessionStorage.getItem('rkStudioAuthProvider')==='supabase';
+  const TABLES=[
+    ['customers','customers'],['shoots','events'],['packages','packages'],
+    ['invoices','invoices'],['payments','payments'],['expenses','expenses'],
+    ['activity_logs','activityLog']
+  ];
+  let baseline={};
+  let syncTimer=null, syncing=false;
+  let initialized=false;
+
+  function clone(v){
+    try{return JSON.parse(JSON.stringify(v));}catch(e){return v;}
+  }
+  function localRows(name,local){return Array.isArray(db?.[local])?db[local]:[];}
+  function rowFor(name,obj){
+    if(name==='customers')return customerToRow(obj);
+    if(name==='shoots')return shootToRow(obj);
+    if(name==='packages')return packageToRow(obj);
+    if(name==='invoices')return invoiceToRow(obj);
+    if(name==='payments')return toPayment(obj,null);
+    if(name==='expenses')return toExpense(obj,null);
+    if(name==='activity_logs')return toLog(obj,null);
+    return obj;
+  }
+  function comparable(name,obj){
+    try{return JSON.stringify(rowFor(name,obj));}catch(e){return JSON.stringify(obj);}
+  }
+  function takeBaseline(){
+    baseline={};
+    TABLES.forEach(([name,local])=>{
+      baseline[name]=new Map(localRows(name,local).map(x=>[String(x.id),comparable(name,x)]));
+    });
+    baseline.studio_settings=JSON.stringify(db.settings||{});
+    initialized=true;
+  }
+  function changedRows(name,local){
+    const old=baseline[name]||new Map();
+    return localRows(name,local).filter(x=>old.get(String(x.id))!==comparable(name,x));
+  }
+
+  async function serverSettings(){
+    if(!isCloud())return;
+    const s=db.settings||{};
+    const row=(typeof settingsToRow==='function')?settingsToRow(s):{
+      id:true,studio_name:s.studio||'RK Studio',phone:s.phone||null,address:s.address||null,
+      primary_color:s.primary||null,secondary_color:s.secondary||null,
+      background_color:s.background||null,card_color:s.cardColor||null,
+      theme:s.theme==='dark'?'dark':'light',sidebar_style:s.sidebar==='light'?'light':'dark',
+      sidebar_color:s.sidebarColor||null,compact:s.compact==='yes'?'yes':'no',
+      sidebar_width:Number(s.sidebarWidth||245),radius:Number(s.radius||15),font_size:Number(s.fontSize||16),
+      font_family:s.fontFamily||null,shadow:s.shadow||null,card_border:s.cardBorder||null,
+      button_style:s.buttonStyle||null,custom_settings:s
+    };
+    const {error}=await cloud().from('studio_settings').upsert(row,{onConflict:'id'});
+    if(error)throw error;
+  }
+
+  async function pushChanged(){
+    if(!isCloud()||!initialized)return;
+    const failures=[];
+    for(const [name,local] of TABLES){
+      const rows=changedRows(name,local);
+      if(!rows.length)continue;
+      const uid=await authUserId();
+      const payload=rows.map(x=>{
+        const r=rowFor(name,x);
+        if((name==='payments'||name==='expenses'||name==='activity_logs')&&uid){
+          if(name==='activity_logs')r.user_id=uid; else r.created_by=uid;
+        }
+        return r;
+      });
+      const {error}=await cloud().from(name).upsert(payload,{onConflict:'id'});
+      if(error)failures.push(`${name}: ${error.message||JSON.stringify(error)}`);
+    }
+    if(JSON.stringify(db.settings||{})!==baseline.studio_settings) await serverSettings();
+    if(failures.length)throw new Error(failures.join(' | '));
+    takeBaseline();
+  }
+
+  async function authoritativeHydrate(){
+    if(!isCloud())return false;
+    try{
+      const results={};
+      for(const [name,local] of TABLES){
+        const {data,error}=await cloud().from(name).select('*');
+        if(error)throw new Error(`${name}: ${error.message||JSON.stringify(error)}`);
+        results[name]=data||[];
+      }
+      const {data:settings,error:se}=await cloud().from('studio_settings').select('*').eq('id',true).maybeSingle();
+      if(se)throw new Error(`studio_settings: ${se.message||JSON.stringify(se)}`);
+
+      /* Cloud is authoritative on startup. Do not resurrect browser-only rows. */
+      db.customers=results.customers.map(rowToCustomer);
+      db.events=results.shoots.map(rowToShoot);
+      db.packages=results.packages.map(rowToPackage);
+      const invLocal=new Map((db.invoices||[]).map(x=>[String(x.id),x]));
+      db.invoices=results.invoices.map(r=>rowToInvoice(r,invLocal.get(String(r.id))));
+      db.payments=results.payments.map(rowToPayment);
+      db.expenses=results.expenses.map(rowToExpense);
+      db.activityLog=results.activity_logs.map(rowToLog);
+      if(settings && typeof rowToSettings==='function')db.settings=rowToSettings(settings);
+      takeBaseline();
+      if(typeof applyUI==='function')applyUI();
+      if(typeof render==='function')render();
+      initialized=true;
+      if(typeof status==='function')status('synced','Server is the source of truth.');
+      window.RK_CLOUD_LAST_ERROR='';
+      return true;
+    }catch(e){
+      console.error('Server-authoritative hydrate failed:',e);
+      if(typeof status==='function')status('local','Cloud load failed: '+(e.message||e));
+      window.RK_CLOUD_LAST_ERROR=e.message||String(e);
+      return false;
+    }
+  }
+
+  function schedule(){
+    if(!isCloud())return;
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(async()=>{
+      if(syncing)return;
+      syncing=true;
+      try{
+        if(typeof status==='function')status('syncing','Saving to server…');
+        await pushChanged();
+        if(typeof status==='function')status('synced','Saved to server.');
+        window.RK_CLOUD_LAST_ERROR='';
+      }catch(e){
+        console.error('Server save failed:',e);
+        window.RK_CLOUD_LAST_ERROR=e.message||String(e);
+        if(typeof status==='function')status('local','Server save failed: '+(e.message||e));
+      }finally{syncing=false;}
+    },350);
+  }
+
+  /* Expose the server-authoritative scheduler used by every existing save(). */
+  window.rkCloudScheduleSave=schedule;
+  window.rkCloudSyncPhase3=pushChanged;
+  window.rkCloudHydratePhase3=authoritativeHydrate;
+
+  /* Collaborative realtime: merge remote changes without replacing the whole DB. */
+  const remoteUpsert=(arr,obj)=>{
+    const i=arr.findIndex(x=>String(x.id)===String(obj.id));
+    if(i>=0)arr[i]=obj;else arr.push(obj);
+  };
+  function subscribe(name){
+    if(!isCloud())return;
+    const ch=cloud().channel('rk-v167-'+name).on('postgres_changes',{event:'*',schema:'public',table:name},payload=>{
+      try{
+        if(name==='studio_settings'){
+          if(payload.eventType==='DELETE')return;
+          if(typeof rowToSettings==='function'){
+            db.settings=rowToSettings(payload.new);
+            baseline.studio_settings=JSON.stringify(db.settings||{});
+            if(typeof applyUI==='function')applyUI();
+            if(document.getElementById('settings')&&!document.getElementById('settings').classList.contains('hidden')&&typeof renderSettings==='function')renderSettings();
+          }
+          return;
+        }
+        if(name==='customers'){
+          if(payload.eventType==='DELETE')db.customers=db.customers.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.customers,rowToCustomer(payload.new));
+        }
+        if(name==='shoots'){
+          if(payload.eventType==='DELETE')db.events=db.events.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.events,rowToShoot(payload.new));
+        }
+        if(name==='packages'){
+          if(payload.eventType==='DELETE')db.packages=db.packages.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.packages,rowToPackage(payload.new));
+        }
+        if(name==='invoices'){
+          if(payload.eventType==='DELETE')db.invoices=db.invoices.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.invoices,rowToInvoice(payload.new,(db.invoices||[]).find(x=>String(x.id)===String(payload.new.id))));
+        }
+        if(name==='payments'){
+          if(payload.eventType==='DELETE')db.payments=db.payments.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.payments,rowToPayment(payload.new));
+        }
+        if(name==='expenses'){
+          if(payload.eventType==='DELETE')db.expenses=db.expenses.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.expenses,rowToExpense(payload.new));
+        }
+        if(name==='activity_logs'){
+          if(payload.eventType==='DELETE')db.activityLog=db.activityLog.filter(x=>String(x.id)!==String(payload.old.id));
+          else remoteUpsert(db.activityLog,rowToLog(payload.new));
+        }
+        /* Update the server baseline so a remote edit is not re-uploaded by this browser. */
+        if(baseline[name]){
+          const id=String(payload.eventType==='DELETE'?payload.old.id:payload.new.id);
+          if(payload.eventType==='DELETE')baseline[name].delete(id);
+          else {
+            const local=localRows(name,TABLES.find(x=>x[0]===name)?.[1]||name).find(x=>String(x.id)===id);
+            if(local)baseline[name].set(id,comparable(name,local));
+          }
+        }
+        if(typeof render==='function')render();
+      }catch(e){console.warn('Realtime update skipped',e)}
+    }).subscribe();
+    return ch;
+  }
+  let channels=[];
+  function start(){
+    channels.forEach(ch=>{try{cloud().removeChannel(ch)}catch(e){}});
+    channels=TABLES.map(x=>subscribe(x[0])).filter(Boolean);
+    channels.push(subscribe('studio_settings'));
+  }
+  window.rkCloudStartRealtimePhase3=start;
+
+  /* Do not show local data before the first authoritative server load. */
+  if(isCloud()){
+    setTimeout(async()=>{
+      const ok=await authoritativeHydrate();
+      if(ok)start();
+    },0);
+  }
+})();
+</script>
 </html>
 <style id="v90-pdf-smart-pagination">
 @media print{
