@@ -2811,65 +2811,32 @@ customers.innerHTML=`<div class="top"><div><h1>${esc(c.name)}</h1><div class="su
 <div class="card"><h3>Billing Summary</h3>${inv.map(i=>`<div style="padding:9px 0;border-bottom:1px solid var(--border)"><b>${esc(i.number)}</b><br>Total ${money(i.total)} · Paid ${money(i.paid)} · <b>Remaining ${money(Math.max(0,i.total-i.paid))}</b><br><div class="actions" style="margin-top:8px"><button class="small" onclick="openInvoiceView('${i.id}')">🧾 View Bill</button><button class="small" onclick="addPayment('${i.id}')">+ Payment</button><button class="small" onclick="sendWhatsApp('${i.id}')">WhatsApp</button></div></div>`).join('')||'<div class="empty">No bills yet</div>'}</div></div>`;
 }
 
-function printInvoiceClean(){
-  const invoice=document.querySelector('#invoices .invoice');
-  if(!invoice){ window.print(); return; }
-
-  const terms=invoice.querySelector('.invoice-terms') ||
-              document.querySelector('#invoices .invoice-terms') ||
-              document.querySelector('.invoice-terms');
-
-  const printClone=invoice.cloneNode(true);
-  if(terms && !printClone.querySelector('.invoice-terms')){
-    printClone.appendChild(terms.cloneNode(true));
+async function printInvoiceClean(){
+  try{
+    const pdfBlob=await rkCreateInvoicePDFBlob();
+    const url=URL.createObjectURL(pdfBlob);
+    const w=window.open(url,'_blank');
+    if(!w){
+      const a=document.createElement('a');
+      a.href=url;
+      a.download='Invoice.pdf';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      alert('Popup blocked. PDF downloaded instead.');
+      return;
+    }
+    // The PDF opened here is the exact same Blob used by WhatsApp sharing.
+    setTimeout(()=>{
+      try{w.focus();}catch(e){}
+      setTimeout(()=>{try{w.print();}catch(e){}},350);
+    },500);
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){
+    console.error('Print / Save PDF failed:',e);
+    alert('PDF create nahi ho paya. Please try again.');
   }
-
-  const w=window.open('about:blank','_blank','width=900,height=1200');
-  if(!w){ alert('Please allow pop-ups to print the invoice.'); return; }
-
-  const styles=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('\n');
-  w.document.open();
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Invoice</title>${styles}
-  <style>
-    @page{margin:12mm}
-    html,body{background:#fff!important;margin:0!important;padding:0!important}
-    body{font-family:Arial,sans-serif}
-    .invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,
-    .invoice-action-bar,.print-hide,.html-link,.file-link,.source-link,.generated-link{display:none!important}
-    a[href]::after{content:none!important}
-    .invoice-terms{display:block!important;visibility:visible!important;page-break-inside:auto!important}
-  </style>
-<style id="rk-premium-animations-v87">
-@keyframes rkFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes rkFadeIn{from{opacity:0}to{opacity:1}}
-@keyframes rkModalIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
-.page:not(.hidden){animation:rkFadeUp .24s ease both}
-.card,.stat-card,.customer-card,.expense-card,.pnl-card,.activity-card{transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
-@media (hover:hover){.card:hover,.stat-card:hover,.customer-card:hover,.expense-card:hover,.pnl-card:hover,.activity-card:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(0,0,0,.08)}}
-button,.btn,.small{transition:transform .12s ease,box-shadow .18s ease,background-color .18s ease,border-color .18s ease,opacity .18s ease}
-button:hover,.btn:hover,.small:hover{transform:translateY(-1px)}
-button:active,.btn:active,.small:active{transform:translateY(0) scale(.98)}
-input,select,textarea{transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
-input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(124,58,237,.10)}
-.toast{animation:rkFadeUp .22s ease both}
-.wa-custom-overlay{animation:rkFadeIn .16s ease both}
-.wa-custom-box{animation:rkModalIn .2s ease both}
-.modal,.modal-overlay{animation:rkFadeIn .16s ease both}
-.modal > div,.modal .modal-box{animation:rkModalIn .2s ease both}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}
-</style>
-
-</head><body>${printClone.outerHTML}
-
-
-
-
-</body>
-</html>`);
-  w.document.close();
-  w.onload=()=>{
-    setTimeout(()=>{w.focus();w.print();},150);
-  };
 }
 
 async function sendInvoicePdfWhatsApp(invoiceId){
