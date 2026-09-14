@@ -25,18 +25,6 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--border
 .formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.full{grid-column:1/-1}.label{font-size:13px;font-weight:700;margin-bottom:6px;display:block}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.show{display:flex}.modalbox{background:var(--card);color:var(--text);border-radius:calc(var(--radius) + 3px);width:min(720px,100%);max-height:90vh;overflow:auto;padding:22px}.modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modalhead h2{margin:0}
 .invoice{max-width:850px;margin:auto;background:var(--card);border:1px solid var(--border);padding:34px;border-radius:16px}.invoicehead{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #222;padding-bottom:20px}.invoice h2{margin:0}.invoice .total{font-size:25px;font-weight:800}.right{text-align:right}.invoice table{margin-top:22px}.invoice-actions{display:flex;gap:10px;justify-content:flex-end;margin-bottom:16px}
-
-.invoice-customer-block{display:flex;align-items:flex-start;gap:14px;margin:18px 0 20px;padding:2px 0;}
-.invoice-customer-photo{width:62px;min-width:62px;height:62px;display:flex;align-items:center;justify-content:center;}
-.invoice-customer-photo .avatar{width:62px;height:62px;border-radius:50%;font-size:22px;}
-.invoice-customer-details{font-size:13px;line-height:1.45;min-width:0;}
-.invoice-customer-details b{font-size:14px;}
-@media(max-width:700px){
-  .invoice-customer-block{gap:12px;margin:14px 0 18px;}
-  .invoice-customer-photo,.invoice-customer-photo .avatar{width:58px;height:58px;min-width:58px;}
-  .invoice-customer-photo .avatar{font-size:20px;}
-  .invoice-customer-details{font-size:12px;line-height:1.4;}
-}
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.day{background:var(--card);border:1px solid var(--border);min-height:100px;border-radius:10px;padding:9px}.event{font-size:11px;background:#eeeaff;color:#5239cc;padding:5px;border-radius:6px;margin-top:6px}
 .package-card{position:relative}.package-price{font-size:27px;font-weight:800;margin:12px 0}.package-list{padding-left:18px;color:var(--muted);line-height:1.8}.package-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#f2efff;color:#5b42d4;font-size:11px;font-weight:700;margin:3px 3px 0 0}.empty{padding:45px;text-align:center;color:var(--muted)}.hidden{display:none!important}
 
@@ -2876,7 +2864,8 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(124,58,237,.10
 
 
 
-</body></html>`);
+</body>
+</html>`);
   w.document.close();
   w.onload=()=>{
     setTimeout(()=>{w.focus();w.print();},150);
@@ -3115,7 +3104,7 @@ async function openInvoiceView(id){
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block"><div class="invoice-customer-photo">${typeof customerAvatar==="function"?customerAvatar(c):""}</div><div class="invoice-customer-details"><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
+    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
@@ -6155,6 +6144,7 @@ window.rkCloudSyncSettings=async function(){
     welcome_enabled:s?.welcome?.enabled!==false,welcome_title:s?.welcome?.title||null,welcome_message:s?.welcome?.message||null,welcome_duration_ms:Number(s?.welcome?.duration||1400),
     whatsapp_templates:s?.waTemplates||{},extra_services:s?.extraServices||[],custom_settings:s||{}};}
   function applySettings(r){if(!r)return;const e=r.custom_settings||{};db.settings={...db.settings,...e,studio:r.studio_name||e.studio||'RK Studio',phone:r.phone||e.phone||'',address:r.address||e.address||'',companyLogoPath:r.company_logo_path||e.companyLogoPath||'',primary:r.primary_color||e.primary||'#6c4df6',secondary:r.secondary_color||e.secondary||'#9a84ff',background:r.background_color||e.background||'#f5f6fa',cardColor:r.card_color||e.cardColor||'#fff',theme:r.theme||e.theme||'light',sidebar:r.sidebar_style||e.sidebar||'dark',sidebarColor:r.sidebar_color||e.sidebarColor||'#17151f',compact:r.compact||e.compact||'no',sidebarWidth:Number(r.sidebar_width||e.sidebarWidth||245),radius:Number(r.radius||e.radius||15),fontSize:Number(r.font_size||e.fontSize||16),fontFamily:r.font_family||e.fontFamily||'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:r.shadow||e.shadow||'soft',cardBorder:r.card_border||e.cardBorder||'on',buttonStyle:r.button_style||e.buttonStyle||'rounded',extraServices:r.extra_services||e.extraServices||[]};}
+  window.rkApplySettingsFromCloud=applySettings;
 
   async function hydrate(){
     if(!isCloud())return false;
@@ -6250,11 +6240,12 @@ window.rkCloudSyncSettings=async function(){
   async function syncSettingsNow(){
     try{
       if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase' || !window.RK_CLOUD_READY) return false;
-      const {data,rowError}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
-      if(rowError) throw rowError;
-      if(!data || typeof window.rowToSettings!=='function') return false;
-      const next=window.rowToSettings(data);
+      const {data,error}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
+      if(error) throw error;
+      if(!data || typeof window.rkApplySettingsFromCloud!=='function') return false;
       const before=JSON.stringify(db.settings||{});
+      window.rkApplySettingsFromCloud(data);
+      const next=db.settings||{};
       const after=JSON.stringify(next||{});
       if(before!==after){
         db.settings=next;
@@ -6321,13 +6312,77 @@ window.rkCloudSyncSettings=async function(){
   // propagate even when the Supabase project has not enabled Realtime for
   // studio_settings yet. It also runs immediately when the page becomes visible.
   let timer=null;
+  async function refreshVisible(){
+    if(document.hidden || sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return;
+    try{
+      if(typeof window.rkCloudHydratePhase3==='function') await window.rkCloudHydratePhase3();
+      if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
+    }catch(e){ console.warn('Periodic cloud refresh failed:',e); }
+    await syncSettingsNow();
+  }
   function start(){
     clearInterval(timer);
-    timer=setInterval(()=>{ if(!document.hidden) syncSettingsNow(); },5000);
-    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncSettingsNow(); });
+    timer=setInterval(refreshVisible,10000);
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshVisible(); });
   }
   start();
-  syncSettingsNow();
+  refreshVisible();
+})();
+</script>
+<script id="rk-v169-instant-cloud-on-open">
+(function(){
+  /* Instant server refresh on every deployed app open/return.
+     Runs only after a real Supabase session exists, never for local file/localhost mode. */
+  let refreshing=false;
+  let refreshPromise=null;
+  async function waitForEngine(timeoutMs=15000){
+    const start=Date.now();
+    while(typeof window.rkCloudHydratePhase3!=='function'){
+      if(Date.now()-start>timeoutMs) return false;
+      await new Promise(r=>setTimeout(r,20));
+    }
+    return true;
+  }
+  async function refreshNow(reason){
+    if(!window.RK_DEPLOYED_MODE) return true;
+    if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return false;
+    if(refreshing && refreshPromise) return refreshPromise;
+    refreshing=true;
+    refreshPromise=(async()=>{
+      try{
+        const ready=await waitForEngine();
+        if(!ready) throw new Error('Cloud sync engine not ready');
+        if(typeof window.status==='function') window.status('syncing','Syncing latest server data…');
+        const ok=await window.rkCloudHydratePhase3();
+        if(!ok) throw new Error(window.RK_CLOUD_LAST_ERROR||'Cloud refresh failed');
+        if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
+        window.RK_CLOUD_LAST_ERROR='';
+        if(typeof window.status==='function') window.status('synced','Latest server data loaded.');
+        return true;
+      }catch(e){
+        console.error('Instant cloud refresh failed:',reason,e);
+        window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
+        if(typeof window.status==='function') window.status('local','Cloud refresh failed: '+window.RK_CLOUD_LAST_ERROR);
+        return false;
+      }finally{
+        refreshing=false;
+        refreshPromise=null;
+      }
+    })();
+    return refreshPromise;
+  }
+  window.rkRefreshCloudNow=refreshNow;
+
+  window.addEventListener('DOMContentLoaded',()=>{
+    // Session restoration/login already performs a blocking hydration before app display.
+    // This second call guarantees a fresh server read immediately after the page is mounted.
+    setTimeout(()=>{ refreshNow('startup'); },0);
+  },{once:true});
+
+  window.addEventListener('pageshow',()=>{ refreshNow('pageshow'); });
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden) refreshNow('visibility');
+  });
 })();
 </script>
 </html>
