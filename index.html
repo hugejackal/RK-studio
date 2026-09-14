@@ -4733,71 +4733,69 @@ async function shareInvoicePDF(invoiceId){
 async function rkCreateInvoicePDFBlob(invoiceId){
   const source=document.querySelector('#invoices .invoice');
   if(!source) throw new Error('Invoice is not open.');
-  if(!window.html2canvas || !window.jspdf) throw new Error('PDF libraries not loaded');
+  if(!window.jspdf) throw new Error('PDF library not loaded');
 
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
-  const pageW=210, pageH=297, margin=12;
-  const usableW=pageW-margin*2;
-  const usableH=pageH-margin*2;
-  let hasPage=false;
+  const margin=12;
+  const printableW=210-(margin*2);
 
-  /*
-   * WhatsApp PDF must visually match the browser Print / Save PDF.
-   * We therefore render ONE print-style document containing the exact invoice
-   * followed by the existing payment structure + photography agreement, then
-   * paginate that single rendered canvas into A4 pages. This avoids the old
-   * 3-page split and keeps logo/customer-photo scaling identical.
-   */
-  function makeHolder(){
-    const h=document.createElement('div');
-    h.style.cssText=[
-      'position:fixed','left:-100000px','top:0','width:794px',
-      'background:#fff','color:#111','margin:0','padding:0','z-index:-1',
-      'font-family:Arial,sans-serif','opacity:1'
-    ].join(';');
-    document.body.appendChild(h);
-    return h;
-  }
-
-  function cleanup(root){
+  const cleanup=(root)=>{
     root.querySelectorAll(
-      '.invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,'+
-      '.invoice-top-actions,.invoice-action-bar,.print-hide,button,.rk-cloud-status,'+
-      '#rkCloudStaticStatus'
+      '.invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,'+
+      '.invoice-action-bar,.print-hide,button,.rk-cloud-status,#rkCloudStaticStatus'
     ).forEach(el=>el.remove());
     root.querySelectorAll('a[href]').forEach(a=>a.removeAttribute('href'));
-  }
+  };
 
-  function applyPrintVisuals(root){
-    root.style.cssText += ';border:0!important;border-radius:0!important;box-shadow:none!important;overflow:visible!important;background:#fff!important;color:#111!important;';
+  const forcePrintLook=(root)=>{
+    root.style.cssText=[
+      'width:794px','max-width:794px','box-sizing:border-box','margin:0','padding:34px',
+      'background:#fff','color:#111','border:0','border-radius:0','box-shadow:none','overflow:visible',
+      'font-family:Arial,sans-serif','opacity:1','filter:none'
+    ].join(';');
+
     root.querySelectorAll('*').forEach(el=>{
-      const cs=getComputedStyle(el);
-      if(cs.opacity && Number(cs.opacity)<1) el.style.opacity='1';
-      if(cs.color && cs.color!=='rgba(0, 0, 0, 0)'){
-        const c=cs.color;
-        if(c==='rgb(115, 119, 132)' || /var\(--muted/i.test(el.getAttribute('style')||'')){
-          el.style.color='#4a4a4a';
-        }
+      el.style.opacity='1';
+      el.style.filter='none';
+      el.style.textShadow='none';
+      const tag=el.tagName;
+      const cls=String(el.className||'');
+      if(tag==='TH'||tag==='TD'||tag==='P'||tag==='LI'||tag==='SPAN'||tag==='DIV'||tag==='B'||tag==='STRONG'||tag==='H1'||tag==='H2'||tag==='H3'||tag==='H4'){
+        el.style.color='#111';
+        el.style.webkitTextFillColor='#111';
+      }
+      if(/muted|invoice-line-services|invoice-package-services|invoice-term-intro|invoice-shoot-row/i.test(cls)){
+        el.style.color='#555';
+        el.style.webkitTextFillColor='#555';
       }
     });
-    root.querySelectorAll('.muted').forEach(el=>el.style.color='#4a4a4a');
-    root.querySelectorAll('th').forEach(el=>el.style.color='#222');
-    root.querySelectorAll('td').forEach(el=>el.style.color='#222');
-    root.querySelectorAll('.invoice-package-services,.invoice-line-services,.invoice-term,.invoice-terms-intro,.invoice-shoot-row').forEach(el=>el.style.color='#333');
-    root.querySelectorAll('.payment-structure,.invoice-terms').forEach(el=>{
-      el.style.breakInside='auto';
-      el.style.pageBreakInside='auto';
+
+    root.querySelectorAll('th').forEach(el=>{
+      el.style.color='#111';
+      el.style.webkitTextFillColor='#111';
+      el.style.fontWeight='800';
     });
+    root.querySelectorAll('td').forEach(el=>{
+      el.style.color='#111';
+      el.style.webkitTextFillColor='#111';
+    });
+    root.querySelectorAll('.invoice-line-services,.invoice-package-services,.invoice-term,.invoice-terms-intro,.invoice-shoot-row').forEach(el=>{
+      el.style.color='#444';
+      el.style.webkitTextFillColor='#444';
+    });
+
     const logo=root.querySelector('.rk-invoice-logo');
     if(logo){
-      logo.style.width='var(--invoice-logo-width,180px)';
-      logo.style.height='var(--invoice-logo-height,70px)';
+      logo.style.width='180px';
+      logo.style.height='70px';
       logo.style.maxWidth='180px';
       logo.style.maxHeight='70px';
       logo.style.objectFit='contain';
       logo.style.objectPosition='left top';
+      logo.style.opacity='1';
     }
+
     root.querySelectorAll('.invoice-customer-photo .avatar,.invoice-customer-photo img').forEach(el=>{
       el.style.width='62px';
       el.style.height='62px';
@@ -4806,94 +4804,74 @@ async function rkCreateInvoicePDFBlob(invoiceId){
       el.style.maxHeight='62px';
       el.style.objectFit='cover';
       el.style.borderRadius='50%';
+      el.style.opacity='1';
     });
-  }
 
-  function addCanvasPages(canvas){
-    const ctx=canvas.getContext('2d');
-    const scaleToA4=usableW/canvas.width;
-    const pagePx=Math.max(1,Math.floor(usableH/scaleToA4));
-    const safeCuts=[...new Set([0,...[...canvas._rkCuts||[]]])].filter(v=>v>0).sort((a,b)=>a-b);
-    let y=0;
+    // Match print/PDF pagination rather than forcing a separate 3-page layout.
+    root.querySelectorAll('.invoice,.invoice-customer-block,.invoice-package-block,.invoice-deliverables-block,.payment-structure,.invoice-terms').forEach(el=>{
+      el.style.breakInside='auto';
+      el.style.pageBreakInside='auto';
+    });
+    root.querySelectorAll('.invoice-package-block,.invoice-deliverables-block,.invoice-customer-block').forEach(el=>{
+      el.style.breakAfter='auto';
+      el.style.pageBreakAfter='auto';
+    });
+    root.querySelectorAll('.payment-structure,.invoice-terms').forEach(el=>{
+      el.style.breakInside='auto';
+      el.style.pageBreakInside='auto';
+      el.style.orphans='2';
+      el.style.widows='2';
+    });
+  };
 
-    while(y<canvas.height-2){
-      const maxEnd=Math.min(canvas.height,y+pagePx);
-      let cut=safeCuts.filter(v=>v>y+10 && v<=maxEnd).pop()||maxEnd;
-      cut=Math.max(y+1,Math.min(cut,canvas.height));
+  const holder=document.createElement('div');
+  holder.style.cssText='position:fixed;left:-100000px;top:0;width:794px;background:#fff;margin:0;padding:0;z-index:-1;overflow:visible;opacity:1;';
+  document.body.appendChild(holder);
 
-      if(hasPage) pdf.addPage();
-      hasPage=true;
-      const h=cut-y;
-      const slice=document.createElement('canvas');
-      slice.width=canvas.width;
-      slice.height=Math.ceil(h);
-      const sctx=slice.getContext('2d');
-      sctx.fillStyle='#fff';
-      sctx.fillRect(0,0,slice.width,slice.height);
-      sctx.drawImage(canvas,0,y,canvas.width,h,0,0,canvas.width,h);
-      const img=slice.toDataURL('image/jpeg',0.96);
-      const mmH=(slice.height*usableW)/canvas.width;
-      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
-      y=cut;
-    }
-  }
-
-  const holder=makeHolder();
   try{
-    /* Build the exact same visual document used by Print / Save PDF. */
     const clone=source.cloneNode(true);
     cleanup(clone);
-    clone.style.cssText=[
-      'width:794px','max-width:794px','background:#fff','color:#111',
-      'margin:0','padding:34px','box-sizing:border-box',
-      'border:0','border-radius:0','box-shadow:none','overflow:visible'
-    ].join(';');
-    holder.appendChild(clone);
+    forcePrintLook(clone);
 
-    const terms=source.querySelector('.invoice-terms') || document.querySelector('#invoices .invoice-terms');
-    const payment=source.querySelector('.payment-structure') || document.querySelector('#invoices .payment-structure');
-
+    const terms=source.querySelector('.invoice-terms')||document.querySelector('#invoices .invoice-terms');
+    const payment=source.querySelector('.payment-structure')||document.querySelector('#invoices .payment-structure');
     if(payment && !clone.querySelector('.payment-structure')) clone.appendChild(payment.cloneNode(true));
     if(terms && !clone.querySelector('.invoice-terms')) clone.appendChild(terms.cloneNode(true));
 
-    applyPrintVisuals(clone);
-
-    const cs=getComputedStyle(clone);
-    const invoiceLogo=clone.querySelector('.rk-invoice-logo');
-    if(invoiceLogo){
-      invoiceLogo.style.width=cs.getPropertyValue('--invoice-logo-width')||'180px';
-      invoiceLogo.style.height=cs.getPropertyValue('--invoice-logo-height')||'70px';
-    }
+    forcePrintLook(clone);
+    holder.appendChild(clone);
 
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 
-    const canvas=await html2canvas(clone,{
-      scale:2,
-      useCORS:true,
-      allowTaint:false,
-      backgroundColor:'#fff',
-      logging:false,
-      windowWidth:794,
-      imageTimeout:15000,
-      foreignObjectRendering:false
+    // Use jsPDF's HTML paginator so the WhatsApp PDF follows the same flow as
+    // browser print instead of slicing a large raster canvas at arbitrary cuts.
+    await new Promise((resolve,reject)=>{
+      pdf.html(clone,{
+        x:margin,
+        y:margin,
+        width:printableW,
+        windowWidth:794,
+        autoPaging:'text',
+        html2canvas:{
+          scale:2,
+          useCORS:true,
+          allowTaint:false,
+          backgroundColor:'#ffffff',
+          logging:false,
+          windowWidth:794,
+          imageTimeout:15000,
+          foreignObjectRendering:false
+        },
+        pagebreak:{mode:['css','legacy']},
+        callback:()=>resolve(),
+        error:err=>reject(err)
+      });
     });
 
-    /* Prefer section-safe boundaries, but keep everything in one continuous
-       document so the result follows the browser print pagination. */
-    const cuts=[];
-    const top=clone.getBoundingClientRect().top;
-    clone.querySelectorAll('.invoice-package-block,.invoice-shoot-row,.payment-structure,.invoice-terms,.invoice-term').forEach(el=>{
-      const r=el.getBoundingClientRect();
-      if(r.bottom>r.top) cuts.push(Math.round((r.bottom-top)*2));
-    });
-    canvas._rkCuts=cuts;
-    addCanvasPages(canvas);
+    return pdf.output('blob');
   }finally{
     holder.remove();
   }
-
-  if(!hasPage) throw new Error('Invoice PDF contains no renderable content.');
-  return pdf.output('blob');
 }
 
 function openInvoiceFromAnywhere(invoiceId){
