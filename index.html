@@ -5915,8 +5915,11 @@ window.rkCloudSyncSettings=async function(){
         const remoteSig=JSON.stringify(remote);
         const localArr=localArray(local);
         const localSig=JSON.stringify(localArr.map(x=>x&&x.id).sort());
-        // Fast path: compare row fingerprints without mutating local data unnecessarily.
-        const mapped=remote.map(r=>table==='customers'?rowToCustomer(r):table==='shoots'?rowToShoot(r):table==='packages'?rowToPackage(r):table==='invoices'?rowToInvoice(r,localArr.find(x=>String(x.id)===String(r.id))):table==='payments'?rowToPayment(r):table==='expenses'?rowToExpense(r):rowToLog(r));
+        // Server-authoritative reconciliation. A local deletion is tombstoned
+        // until the async cloud DELETE completes, so this safety poll cannot
+        // resurrect the row during that race window.
+        const visibleRemote=remote.filter(r=>!rkIsCloudDeleted(table.name,r.id));
+        const mapped=visibleRemote.map(r=>table==='customers'?rowToCustomer(r):table==='shoots'?rowToShoot(r):table==='packages'?rowToPackage(r):table==='invoices'?rowToInvoice(r,localArr.find(x=>String(x.id)===String(r.id))):table==='payments'?rowToPayment(r):table==='expenses'?rowToExpense(r):rowToLog(r));
         const mappedSig=JSON.stringify(mapped);
         const currentSig=JSON.stringify(localArr);
         if(mappedSig!==currentSig){
@@ -5941,7 +5944,17 @@ window.rkCloudSyncSettings=async function(){
     }catch(e){console.warn('Cloud fallback poll skipped:',e)}
   }
   window.rkCloudFallbackPoll=fallbackPoll;
-  if(isCloud())(async()=>{const ok=await hydrate();if(ok){startRealtime();fallbackPoll();setInterval(fallbackPoll,3000)}})();
+  // Live handshake: Realtime is primary; the server reconciliation poll is
+  // a safety net for missed/disconnected realtime events. It runs every 3s
+  // and is server-authoritative + deletion-tombstone aware.
+  if(isCloud())(async()=>{
+    const ok=await hydrate();
+    if(ok){
+      startRealtime();
+      fallbackPoll();
+      setInterval(fallbackPoll,3000);
+    }
+  })();
 })();
 </script>
 <script id="rk-v168-settings-cross-device-sync">
