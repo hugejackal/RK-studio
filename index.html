@@ -4558,274 +4558,87 @@ function renderPLReports(){
 }
 
 
-let rkPendingInvoiceShare=null;
+let rkPendingInvoicePrint={invoiceId:null,win:null};
 
 function closeInvoicePdfPreview(){
   const modal=document.getElementById('rkInvoicePdfPreview');
   if(modal) modal.remove();
-  if(rkPendingInvoiceShare?.url){
-    URL.revokeObjectURL(rkPendingInvoiceShare.url);
-  }
-  rkPendingInvoiceShare=null;
+  rkPendingInvoicePrint={invoiceId:null,win:null};
 }
 
-async function previewShareInvoicePDF(invoiceId){
+function buildNativePrintHtml(invoiceId){
+  const invoice=document.querySelector('#invoices .invoice');
+  if(!invoice) throw new Error('Invoice is not open.');
+  const terms=invoice.querySelector('.invoice-terms') || document.querySelector('#invoices .invoice-terms') || document.querySelector('.invoice-terms');
+  const printClone=invoice.cloneNode(true);
+  if(terms && !printClone.querySelector('.invoice-terms')) printClone.appendChild(terms.cloneNode(true));
+  const styles=[...document.querySelectorAll('style')].map(s=>s.outerHTML).join('\n');
+  const title='Invoice '+String((db.invoices||[]).find(x=>String(x.id)===String(invoiceId))?.number||'');
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>${styles}
+  <style>
+    @page{size:A4 portrait;margin:12mm}
+    html,body{background:#fff!important;color:#111!important;margin:0!important;padding:0!important;overflow:visible!important}
+    body{font-family:Arial,sans-serif!important}
+    .invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,.invoice-action-bar,.print-hide,.html-link,.file-link,.source-link,.generated-link{display:none!important}
+    a[href]::after{content:none!important}
+    .invoice-terms{display:block!important;visibility:visible!important;page-break-inside:auto!important}
+    .invoice,.main{overflow:visible!important;max-width:none!important}
+    img{max-width:100%!important}
+  </style></head><body>${printClone.outerHTML}</body></html>`;
+}
+
+function previewShareInvoicePDF(invoiceId){
   try{
     closeInvoicePdfPreview();
-    const i=(db.invoices||[]).find(x=>String(x.id)===String(invoiceId));
-    if(!i){alert('Invoice not found.');return;}
-    const c=(db.customers||[]).find(x=>String(x.id)===String(i.customerId))||{};
-    const studio=db.settings?.studio||'RK Studio';
-
-    // Generate ONCE. The preview and final Share action use this exact same Blob.
-    const pdfBlob=await rkCreateInvoicePDFBlob(invoiceId);
-    const safeNumber=String(i.number||invoiceId).replace(/[^a-z0-9_-]/gi,'-');
-    const file=new File([pdfBlob],`Invoice-${safeNumber}.pdf`,{type:'application/pdf'});
-    const url=URL.createObjectURL(file);
-    const message=`Hello ${c.name||'Customer'} ji 👋\n\nPlease find your invoice from ${studio}.\n\nInvoice: ${i.number||''}\nTotal Amount: ${money(i.total)}\nPaid Amount: ${money(i.paid)}\nRemaining Amount: ${money(Math.max(0,Number(i.total||0)-Number(i.paid||0)))}\n\nThank you,\n${studio}`;
-
-    rkPendingInvoiceShare={invoiceId:String(invoiceId),file,url,message,name:file.name,customer:c};
-
+    const html=buildNativePrintHtml(invoiceId);
     const modal=document.createElement('div');
     modal.id='rkInvoicePdfPreview';
     modal.style.cssText='position:fixed;inset:0;z-index:200000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;';
     modal.innerHTML=`
-      <div style="width:min(1000px,96vw);height:min(92vh,900px);background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 18px 70px rgba(0,0,0,.35)">
+      <div style="width:min(1050px,96vw);height:min(92vh,920px);background:#fff;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 18px 70px rgba(0,0,0,.35)">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:#171922;color:#fff;flex:0 0 auto">
-          <div><b style="font-size:15px">📄 Invoice Preview</b><div style="font-size:11px;opacity:.75">This exact PDF will be shared</div></div>
+          <div><b style="font-size:15px">📄 Invoice Preview</b><div style="font-size:11px;opacity:.75">Same Print / Save PDF layout</div></div>
           <button type="button" id="rkInvoicePreviewClose" style="border:0;background:#2a2d38;color:#fff;border-radius:9px;padding:8px 12px;font-weight:700;cursor:pointer">✕</button>
         </div>
-        <iframe title="Invoice PDF Preview" src="${url}" style="border:0;width:100%;height:100%;background:#fff;flex:1 1 auto"></iframe>
+        <iframe id="rkInvoicePrintFrame" title="Invoice Print Preview" style="border:0;width:100%;height:100%;background:#fff;flex:1 1 auto"></iframe>
         <div style="display:flex;justify-content:flex-end;gap:10px;padding:12px 14px;background:#fff;border-top:1px solid #e6e6ea;flex:0 0 auto">
           <button type="button" id="rkInvoicePreviewCancel" style="border:1px solid #d7d7df;background:#fff;color:#222;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer">Close</button>
-          <button type="button" id="rkInvoicePreviewShare" style="border:0;background:#7c3aed;color:#fff;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer">📤 Share PDF</button>
+          <button type="button" id="rkInvoicePreviewShare" style="border:0;background:#7c3aed;color:#fff;border-radius:10px;padding:10px 18px;font-weight:800;cursor:pointer">📤 Share Invoice PDF</button>
         </div>
       </div>`;
     document.body.appendChild(modal);
-
+    const frame=modal.querySelector('#rkInvoicePrintFrame');
+    frame.srcdoc=html;
+    rkPendingInvoicePrint={invoiceId:String(invoiceId),win:null};
     modal.querySelector('#rkInvoicePreviewClose').onclick=closeInvoicePdfPreview;
     modal.querySelector('#rkInvoicePreviewCancel').onclick=closeInvoicePdfPreview;
     modal.addEventListener('click',e=>{if(e.target===modal)closeInvoicePdfPreview();});
-    modal.querySelector('#rkInvoicePreviewShare').onclick=sharePendingInvoicePDF;
-  }catch(e){
-    console.error('Invoice PDF preview failed:',e);
-    alert('Invoice PDF preview nahi khul paya. Please try again.');
-  }
+    modal.querySelector('#rkInvoicePreviewShare').onclick=()=>sharePendingInvoicePDF();
+  }catch(e){console.error(e);alert('Invoice Preview nahi khul paya.');}
 }
 
-async function sharePendingInvoicePDF(){
-  const state=rkPendingInvoiceShare;
-  if(!state?.file){return;}
+function sharePendingInvoicePDF(){
+  const state=rkPendingInvoicePrint;
   const btn=document.getElementById('rkInvoicePreviewShare');
-  if(btn){btn.disabled=true;btn.textContent='⏳ Sharing…';}
-  try{
-    if(navigator.share && navigator.canShare && navigator.canShare({files:[state.file]})){
-      await navigator.share({
-        title:`Invoice ${state.customer?.name||''}`,
-        text:state.message,
-        files:[state.file]
-      });
-      if(typeof rkLog==='function')rkLog('WhatsApp','Invoice PDF shared',state.file.name,state.invoiceId);
-      closeInvoicePdfPreview();
-      return;
-    }
-
-    // Desktop fallback: use the exact same File that was previewed.
-    const downloadUrl=URL.createObjectURL(state.file);
-    const a=document.createElement('a');
-    a.href=downloadUrl;
-    a.download=state.file.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(downloadUrl),4000);
-
-    const phone=String(state.customer?.phone||'').replace(/\D/g,'');
-    const intl=phone.length===10?'91'+phone:phone;
-    if(intl){
-      window.open(`https://wa.me/${intl}?text=${encodeURIComponent(state.message)}`,'_blank');
-    }else{
-      alert('PDF download ho gaya. Customer WhatsApp number missing hai, isliye WhatsApp open nahi kiya gaya.');
-    }
-    if(typeof rkLog==='function')rkLog('WhatsApp','Invoice PDF prepared',state.file.name,state.invoiceId);
-    closeInvoicePdfPreview();
-  }catch(e){
-    if(e?.name==='AbortError'){
-      if(btn){btn.disabled=false;btn.textContent='📤 Share PDF';}
-      return;
-    }
-    console.error('Invoice PDF share failed:',e);
-    if(btn){btn.disabled=false;btn.textContent='📤 Share PDF';}
-    alert('Invoice PDF share nahi ho paya.');
+  if(!state?.invoiceId) return;
+  if(btn){btn.disabled=true;btn.textContent='⏳ Opening Print / PDF…';}
+  const html=buildNativePrintHtml(state.invoiceId);
+  const w=window.open('about:blank','_blank','width=900,height=1200');
+  if(!w){
+    if(btn){btn.disabled=false;btn.textContent='📤 Share Invoice PDF';}
+    alert('Please allow pop-ups for the invoice PDF.');
+    return;
   }
+  state.win=w;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.onload=()=>{
+    setTimeout(()=>{try{w.focus();w.print();}catch(e){console.error(e)}},150);
+  };
+  closeInvoicePdfPreview();
 }
 
-async function rkCreateInvoicePDFBlob(invoiceId){
-  const source=document.querySelector('#invoices .invoice');
-  if(!source) throw new Error('Invoice is not open.');
-  if(!window.html2canvas || !window.jspdf) throw new Error('PDF libraries not loaded');
-
-  const {jsPDF}=window.jspdf;
-  const pdf=new jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
-  const pageW=210, pageH=297, margin=10;
-  const usableW=pageW-margin*2, usableH=pageH-margin*2;
-  let hasPage=false;
-
-  function cleanup(root){
-    root.querySelectorAll(
-      '.invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,'+
-      '.invoice-top-actions,.invoice-action-bar,.print-hide,button'
-    ).forEach(x=>x.remove());
-    root.querySelectorAll('a[href]').forEach(a=>a.removeAttribute('href'));
-  }
-
-  function makeHolder(){
-    const h=document.createElement('div');
-    h.style.cssText=[
-      'position:fixed','left:-100000px','top:0','width:794px',
-      'background:#fff','color:#111','margin:0','padding:0','z-index:-1',
-      'font-family:Arial,sans-serif'
-    ].join(';');
-    document.body.appendChild(h);
-    return h;
-  }
-
-  // Remove trailing canvas whitespace so a tiny overflow does not create
-  // a visually blank A4 page.
-  function trimCanvas(canvas){
-    const ctx=canvas.getContext('2d');
-    const {width,height}=canvas;
-    const data=ctx.getImageData(0,0,width,height).data;
-    let top=height, bottom=-1, left=width, right=-1;
-    const threshold=248; // treat near-white as page background
-    for(let y=0;y<height;y+=2){
-      for(let x=0;x<width;x+=2){
-        const p=(y*width+x)*4;
-        const a=data[p+3];
-        if(a>0 && (data[p]<threshold || data[p+1]<threshold || data[p+2]<threshold)){
-          if(y<top) top=y;
-          if(y>bottom) bottom=y;
-          if(x<left) left=x;
-          if(x>right) right=x;
-        }
-      }
-    }
-    if(bottom<0) return canvas;
-    const pad=8;
-    top=Math.max(0,top-pad);
-    bottom=Math.min(height-1,bottom+pad);
-    left=Math.max(0,left-pad);
-    right=Math.min(width-1,right+pad);
-    const out=document.createElement('canvas');
-    out.width=right-left+1;
-    out.height=bottom-top+1;
-    out.getContext('2d').drawImage(canvas,left,top,out.width,out.height,0,0,out.width,out.height);
-    return out;
-  }
-
-  function getSafeCuts(root){
-    const cuts=new Set([0]);
-    const top=root.getBoundingClientRect().top;
-    const selectors=[
-      ':scope > *','tr','.invoice-package-block','.invoice-shoot-row',
-      '.invoice-deliverables-block','.invoice-term','.invoice-terms-intro',
-      '.payment-structure > *','.invoice-terms > *'
-    ];
-    selectors.forEach(sel=>{
-      try{
-        root.querySelectorAll(sel).forEach(el=>{
-          const r=el.getBoundingClientRect();
-          if(r.width>0 && r.height>0) cuts.add(Math.round((r.bottom-top)*2));
-        });
-      }catch(e){}
-    });
-    return [...cuts].filter(v=>v>0).sort((a,b)=>a-b);
-  }
-
-  function addCanvasPages(rawCanvas,cuts){
-    const canvas=trimCanvas(rawCanvas);
-    const maxPx=Math.max(1,Math.floor((usableH/usableW)*canvas.width));
-    let y=0;
-
-    while(y<canvas.height-4){
-      const target=Math.min(canvas.height,y+maxPx);
-      let cut=cuts.filter(v=>v>y+12 && v<=target).pop();
-      if(!cut || cut<=y) cut=target;
-      cut=Math.min(cut,canvas.height);
-
-      if(hasPage) pdf.addPage();
-      hasPage=true;
-
-      const sliceH=Math.max(1,cut-y);
-      const slice=document.createElement('canvas');
-      slice.width=canvas.width;
-      slice.height=Math.ceil(sliceH);
-
-      const ctx=slice.getContext('2d');
-      ctx.fillStyle='#fff';
-      ctx.fillRect(0,0,slice.width,slice.height);
-      ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
-
-      const img=slice.toDataURL('image/jpeg',0.96);
-      const mmH=(slice.height*usableW)/canvas.width;
-      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
-
-      y=cut;
-    }
-  }
-
-  async function renderNode(node){
-    const holder=makeHolder();
-    const clone=node.cloneNode(true);
-    cleanup(clone);
-    clone.style.cssText=[
-      'width:794px','max-width:794px','background:#fff','color:#111',
-      'margin:0','padding:0','box-sizing:border-box'
-    ].join(';');
-    holder.appendChild(clone);
-    try{
-      const canvas=await html2canvas(clone,{
-        scale:2,useCORS:true,backgroundColor:'#fff',
-        logging:false,windowWidth:794,imageTimeout:15000
-      });
-      addCanvasPages(canvas,getSafeCuts(clone));
-    }finally{
-      holder.remove();
-    }
-  }
-
-  // Main invoice: identical content to Print / Save PDF, excluding only
-  // Payment Structure and the Agreement so they can begin cleanly on the
-  // following page without creating an empty overflow page.
-  const main=source.cloneNode(true);
-  main.querySelectorAll('.payment-structure,.invoice-terms').forEach(x=>x.remove());
-  await renderNode(main);
-
-  // These are real invoice sections; Agreement may be outside .invoice.
-  const payment=source.querySelector('.payment-structure') ||
-                document.querySelector('#invoices .payment-structure');
-  const terms=document.querySelector('#invoices .invoice-terms') ||
-              source.querySelector('.invoice-terms');
-
-  const tail=document.createElement('div');
-  tail.style.cssText='width:794px;background:#fff;color:#111;margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif;';
-
-  if(payment){
-    const p=payment.cloneNode(true);
-    p.style.cssText+=';margin:0 0 14px 0!important;box-sizing:border-box;width:100%;';
-    tail.appendChild(p);
-  }
-  if(terms){
-    const a=terms.cloneNode(true);
-    a.style.cssText+=';margin:0!important;box-sizing:border-box;width:100%;';
-    tail.appendChild(a);
-  }
-
-  if(payment || terms) await renderNode(tail);
-
-  if(!hasPage) throw new Error('Invoice PDF contains no renderable content.');
-  return pdf.output('blob');
-}
 function openInvoiceFromAnywhere(invoiceId){
   const inv=(db.invoices||[]).find(x=>String(x.id)===String(invoiceId));
   if(!inv){alert("Invoice not found.");return;}
