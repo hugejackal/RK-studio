@@ -3071,7 +3071,7 @@ async function openInvoiceView(id){
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
+    <div class="invoice-customer-block"><div class="invoice-customer-photo-wrap">${typeof customerAvatar==="function"?customerAvatar(c):""}</div><div class="invoice-customer-details"><div class="invoice-customer-label">Bill To</div><div class="invoice-customer-name">${esc(c.name||"")}</div><div class="invoice-customer-line">${esc(c.phone||"")}</div>${c.venue?`<div class="invoice-customer-line">${esc(c.venue)}</div>`:""}</div></div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
@@ -6516,4 +6516,55 @@ select option{
 
 <style id="rk-v156-cloud-status-cleanup">
 .rk-cloud-status-row{display:none!important}
+</style>
+
+<style id="rk-invoice-customer-photo-left">
+.invoice-customer-block{
+  display:flex!important;
+  align-items:flex-start!important;
+  gap:14px!important;
+  width:100%!important;
+  padding:14px 0!important;
+  box-sizing:border-box!important;
+}
+.invoice-customer-photo-wrap{
+  flex:0 0 auto!important;
+  width:58px!important;
+  min-width:58px!important;
+  display:flex!important;
+  align-items:flex-start!important;
+  justify-content:flex-start!important;
+}
+.invoice-customer-photo-wrap .avatar,
+.invoice-customer-photo-wrap img{
+  width:58px!important;
+  height:58px!important;
+  min-width:58px!important;
+  max-width:58px!important;
+  max-height:58px!important;
+  border-radius:50%!important;
+  object-fit:cover!important;
+  display:block!important;
+}
+.invoice-customer-details{
+  flex:1 1 auto!important;
+  min-width:0!important;
+  padding-top:1px!important;
+  text-align:left!important;
+  line-height:1.45!important;
+}
+.invoice-customer-label{
+  font-weight:800!important;
+  margin-bottom:2px!important;
+}
+.invoice-customer-name{
+  font-weight:600!important;
+}
+.invoice-customer-line{
+  color:inherit!important;
+  font-size:13px!important;
+}
+@media print{
+  .invoice-customer-block{page-break-inside:avoid!important;}
+}
 </style>
