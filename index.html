@@ -5826,36 +5826,77 @@ window.rkCloudSyncSettings=async function(){
   }
 
   async function pushChanged(){
-    if(!isCloud()||!window.RK_CLOUD_READY)return;
+    if(!isCloud()||!window.RK_CLOUD_READY)return {ok:false,skipped:true};
     const uid=await authUserId();
-    const failures=[];
+    const writes=[];
     for(const [table,local] of TABLES){
       const old=baseline[table]||new Map();
       const current=localArray(local);
       const changed=current.filter(x=>old.get(String(x.id))!==comparable(table,x));
       if(!changed.length)continue;
       const payload=changed.map(x=>rowFor(table,x,uid));
-      const {error}=await cloud().from(table).upsert(payload,{onConflict:'id'});
-      if(error)failures.push(`${table}: ${error.message||JSON.stringify(error)}`);
+      writes.push((async()=>{
+        const {data,error}=await cloud().from(table).upsert(payload,{onConflict:'id'}).select('*');
+        if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
+        return [table,data||[]];
+      })());
     }
     const nowSettings=JSON.stringify(db.settings||{});
     if(nowSettings!==baseline.studio_settings){
-      const {error}=await cloud().from('studio_settings').upsert(settingsRow(db.settings||{}),{onConflict:'id'});
-      if(error)failures.push(`studio_settings: ${error.message||JSON.stringify(error)}`);
+      writes.push((async()=>{
+        const {data,error}=await cloud().from('studio_settings').upsert(settingsRow(db.settings||{}),{onConflict:'id'}).select('*').maybeSingle();
+        if(error)throw new Error(`studio_settings: ${error.message||JSON.stringify(error)}`);
+        return ['studio_settings',data?[data]:[]];
+      })());
     }
-    if(failures.length)throw new Error(failures.join(' | '));
+    if(!writes.length)return {ok:true,changed:false};
+    const results=await Promise.all(writes);
+    // Server-verify the rows we just wrote before marking the local baseline clean.
+    for(const [table,data] of results){
+      if(table==='studio_settings'){
+        if(data[0]){ applySettings(data[0]); baseline.studio_settings=JSON.stringify(db.settings||{}); }
+        continue;
+      }
+      const local=TABLES.find(x=>x[0]===table)?.[1];
+      if(!local)continue;
+      const arr=localArray(local);
+      for(const row of data){
+        const mapped=table==='customers'?rowToCustomer(row):table==='shoots'?rowToShoot(row):table==='packages'?rowToPackage(row):table==='invoices'?rowToInvoice(row,arr.find(x=>String(x.id)===String(row.id))):table==='payments'?rowToPayment(row):table==='expenses'?rowToExpense(row):rowToLog(row);
+        const idx=arr.findIndex(x=>String(x.id)===String(mapped.id));
+        if(idx>=0)arr[idx]=mapped; else arr.push(mapped);
+      }
+    }
     takeBaseline();
+    window.RK_CLOUD_LAST_VERIFY_AT=Date.now();
+    return {ok:true,changed:true,verifiedAt:window.RK_CLOUD_LAST_VERIFY_AT};
+  }
+  let syncQueued=false;
+  async function runImmediateSync(){
+    if(!isCloud()||!window.RK_CLOUD_READY)return;
+    if(syncing){syncQueued=true;return;}
+    syncing=true;
+    syncQueued=false;
+    try{
+      if(typeof status==='function')status('syncing','Syncing to Supabase…');
+      const result=await pushChanged();
+      if(typeof status==='function')status('synced',result?.changed?'Saved & verified in Supabase':'Supabase synced');
+      window.RK_CLOUD_LAST_ERROR='';
+      if(typeof window.rkRefreshCurrentPage==='function')window.rkRefreshCurrentPage();
+    }catch(e){
+      window.RK_CLOUD_LAST_ERROR=e.message||String(e);
+      console.error('Supabase immediate sync failed:',e);
+      if(typeof status==='function')status('local','Sync failed — will retry');
+    }finally{
+      syncing=false;
+      if(syncQueued)queueMicrotask(runImmediateSync);
+    }
   }
   function schedule(){
     if(!isCloud()||!window.RK_CLOUD_READY)return;
     clearTimeout(syncTimer);
-    syncTimer=setTimeout(async()=>{
-      if(syncing)return;
-      syncing=true;
-      try{if(typeof status==='function')status('syncing','Saving to Supabase…');await pushChanged();if(typeof status==='function')status('synced','Saved to Supabase');window.RK_CLOUD_LAST_ERROR='';}
-      catch(e){window.RK_CLOUD_LAST_ERROR=e.message||String(e);console.error('Supabase save failed:',e);if(typeof status==='function')status('local','Save failed: '+(e.message||e));}
-      finally{syncing=false;}
-    },300);
+    // No artificial 300–450ms debounce for user saves: push immediately so
+    // Realtime on other devices can fire as soon as Supabase accepts the row.
+    syncTimer=setTimeout(runImmediateSync,0);
   }
   window.rkCloudScheduleSave=schedule;
   window.rkCloudSyncPhase3=pushChanged;
@@ -5952,7 +5993,7 @@ window.rkCloudSyncSettings=async function(){
     if(ok){
       startRealtime();
       fallbackPoll();
-      setInterval(fallbackPoll,3000);
+      setInterval(fallbackPoll,5000);
     }
   })();
 })();
