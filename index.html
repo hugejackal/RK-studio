@@ -2548,17 +2548,33 @@ function rkMarkCloudDeleted(table,id){window.rkCloudDeleteTombstones[`${table}:$
 function rkIsCloudDeleted(table,id){return !!window.rkCloudDeleteTombstones?.[`${table}:${String(id)}`];}
 function rkClearCloudDeleted(table,id){delete window.rkCloudDeleteTombstones[`${table}:${String(id)}`];}
 async function rkCloudDelete(table,id){
-  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return;
-  const {error}=await window.RK_SUPABASE.from(table).delete().eq('id',String(id));
+  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return {ok:false,skipped:true};
+  const {data,error}=await window.RK_SUPABASE.from(table).delete().eq('id',String(id)).select('id');
   if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
+  const deleted=Array.isArray(data)?data.length:0;
+  if(deleted!==1){
+    // Supabase can return no error when RLS/permissions prevent a row from
+    // being deleted. Treat that as a failed server delete so the local tombstone
+    // is NOT cleared and the stale row cannot silently resurrect on another device.
+    throw new Error(`${table}: server did not confirm deletion for id ${id}`);
+  }
+  // Final verification: the row must no longer be readable from the server.
+  const verify=await window.RK_SUPABASE.from(table).select('id').eq('id',String(id)).maybeSingle();
+  if(verify.error)throw new Error(`${table}: delete verification failed: ${verify.error.message||JSON.stringify(verify.error)}`);
+  if(verify.data)throw new Error(`${table}: row still exists on server after delete`);
+  return {ok:true,deleted:1};
 }
 async function rkCloudDeleteWhere(table,column,value){
-  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return;
-  const {error}=await window.RK_SUPABASE.from(table).delete().eq(column,String(value));
+  if(!window.RK_SUPABASE||sessionStorage.getItem('rkStudioAuthProvider')!=='supabase')return {ok:false,skipped:true};
+  const {data,error}=await window.RK_SUPABASE.from(table).delete().eq(column,String(value)).select('id');
   if(error)throw new Error(`${table}.${column}: ${error.message||JSON.stringify(error)}`);
+  return {ok:true,deleted:Array.isArray(data)?data.length:0};
 }
 function rkCloudDeleteReport(p){
-  Promise.resolve(p).catch(e=>{
+  Promise.resolve(p).then(()=>{
+    window.RK_CLOUD_LAST_ERROR='';
+    if(typeof window.rkCloudFallbackPoll==='function') window.rkCloudFallbackPoll();
+  }).catch(e=>{
     window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
     console.warn('Cloud delete failed:',e);
     if(typeof rkToast==='function')rkToast('Deleted locally · cloud delete failed','error');
@@ -5993,7 +6009,7 @@ window.rkCloudSyncSettings=async function(){
     if(ok){
       startRealtime();
       fallbackPoll();
-      setInterval(fallbackPoll,5000);
+      setInterval(fallbackPoll,3000);
     }
   })();
 })();
