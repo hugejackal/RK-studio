@@ -5904,7 +5904,44 @@ window.rkCloudSyncSettings=async function(){
   function startRealtime(){channels.forEach(c=>{try{cloud().removeChannel(c)}catch(e){}});channels=TABLES.map(x=>subscribe(x[0])).filter(Boolean);channels.push(subscribe('studio_settings'))}
   window.rkCloudStartRealtimePhase3=startRealtime;
 
-  if(isCloud())(async()=>{const ok=await hydrate();if(ok)startRealtime();})();
+  async function fallbackPoll(){
+    if(!isCloud()||document.hidden||!window.RK_CLOUD_READY)return;
+    try{
+      let changed=false;
+      for(const [table,local] of TABLES){
+        const {data,error}=await cloud().from(table).select('*');
+        if(error) continue;
+        const remote=data||[];
+        const remoteSig=JSON.stringify(remote);
+        const localArr=localArray(local);
+        const localSig=JSON.stringify(localArr.map(x=>x&&x.id).sort());
+        // Fast path: compare row fingerprints without mutating local data unnecessarily.
+        const mapped=remote.map(r=>table==='customers'?rowToCustomer(r):table==='shoots'?rowToShoot(r):table==='packages'?rowToPackage(r):table==='invoices'?rowToInvoice(r,localArr.find(x=>String(x.id)===String(r.id))):table==='payments'?rowToPayment(r):table==='expenses'?rowToExpense(r):rowToLog(r));
+        const mappedSig=JSON.stringify(mapped);
+        const currentSig=JSON.stringify(localArr);
+        if(mappedSig!==currentSig){
+          db[local]=mapped;
+          baseline[table]=baseline[table]||new Map();
+          mapped.forEach(x=>baseline[table].set(String(x.id),comparable(table,x)));
+          changed=true;
+        }
+      }
+      const {data:srow,error:serr}=await cloud().from('studio_settings').select('*').eq('id',true).maybeSingle();
+      if(!serr&&srow&&typeof applySettings==='function'){
+        const before=JSON.stringify(db.settings||{});
+        applySettings(srow);
+        if(JSON.stringify(db.settings||{})!==before){changed=true;if(typeof applyUI==='function')applyUI();}
+      }
+      if(changed){
+        window.RK_CLOUD_STATUS='synced';
+        window.RK_CLOUD_STATUS_MESSAGE='Live cloud update';
+        if(typeof window.rkRefreshCurrentPage==='function')window.rkRefreshCurrentPage();
+        else if(typeof render==='function')render();
+      }
+    }catch(e){console.warn('Cloud fallback poll skipped:',e)}
+  }
+  window.rkCloudFallbackPoll=fallbackPoll;
+  if(isCloud())(async()=>{const ok=await hydrate();if(ok){startRealtime();fallbackPoll();setInterval(fallbackPoll,3000)}})();
 })();
 </script>
 <script id="rk-v168-settings-cross-device-sync">
