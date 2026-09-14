@@ -25,6 +25,18 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--border
 .formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.full{grid-column:1/-1}.label{font-size:13px;font-weight:700;margin-bottom:6px;display:block}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.show{display:flex}.modalbox{background:var(--card);color:var(--text);border-radius:calc(var(--radius) + 3px);width:min(720px,100%);max-height:90vh;overflow:auto;padding:22px}.modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modalhead h2{margin:0}
 .invoice{max-width:850px;margin:auto;background:var(--card);border:1px solid var(--border);padding:34px;border-radius:16px}.invoicehead{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #222;padding-bottom:20px}.invoice h2{margin:0}.invoice .total{font-size:25px;font-weight:800}.right{text-align:right}.invoice table{margin-top:22px}.invoice-actions{display:flex;gap:10px;justify-content:flex-end;margin-bottom:16px}
+
+.invoice-customer-block{display:flex;align-items:flex-start;gap:14px;margin:18px 0 20px;padding:2px 0;}
+.invoice-customer-photo{width:62px;min-width:62px;height:62px;display:flex;align-items:center;justify-content:center;}
+.invoice-customer-photo .avatar{width:62px;height:62px;border-radius:50%;font-size:22px;}
+.invoice-customer-details{font-size:13px;line-height:1.45;min-width:0;}
+.invoice-customer-details b{font-size:14px;}
+@media(max-width:700px){
+  .invoice-customer-block{gap:12px;margin:14px 0 18px;}
+  .invoice-customer-photo,.invoice-customer-photo .avatar{width:58px;height:58px;min-width:58px;}
+  .invoice-customer-photo .avatar{font-size:20px;}
+  .invoice-customer-details{font-size:12px;line-height:1.4;}
+}
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.day{background:var(--card);border:1px solid var(--border);min-height:100px;border-radius:10px;padding:9px}.event{font-size:11px;background:#eeeaff;color:#5239cc;padding:5px;border-radius:6px;margin-top:6px}
 .package-card{position:relative}.package-price{font-size:27px;font-weight:800;margin:12px 0}.package-list{padding-left:18px;color:var(--muted);line-height:1.8}.package-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#f2efff;color:#5b42d4;font-size:11px;font-weight:700;margin:3px 3px 0 0}.empty{padding:45px;text-align:center;color:var(--muted)}.hidden{display:none!important}
 
@@ -3103,7 +3115,7 @@ async function openInvoiceView(id){
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
+    <div class="invoice-customer-block"><div class="invoice-customer-photo">${typeof customerAvatar==="function"?customerAvatar(c):""}</div><div class="invoice-customer-details"><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
