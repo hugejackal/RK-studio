@@ -6150,12 +6150,20 @@ window.rkCloudSyncSettings=async function(){
     if(!isCloud())return false;
     try{
       if(typeof status==='function')status('syncing','Loading from Supabase…');
-      for(const [table,local] of TABLES){
+
+      // Load independent tables in parallel instead of one-by-one. This removes
+      // the long serial wait after login while keeping the same final state.
+      const results=await Promise.all(TABLES.map(async([table,local])=>{
         const {data,error}=await cloud().from(table).select('*');
         if(error)throw new Error(`${table}: ${error.message||JSON.stringify(error)}`);
-        setLocal(table,data||[]);
-      }
-      applySettings(await getSettingsRow());
+        return [local,data||[]];
+      }));
+      results.forEach(([local,data])=>setLocal(local,data));
+
+      // Settings is independent too, so fetch it without another serial delay.
+      const settingsRow=await getSettingsRow();
+      applySettings(settingsRow);
+
       takeBaseline();
       window.RK_CLOUD_READY=true;
       if(typeof applyUI==='function')applyUI();
@@ -6208,6 +6216,9 @@ window.rkCloudSyncSettings=async function(){
   window.rkCloudSyncPhase3=pushChanged;
   window.rkCloudHydratePhase3=hydrate;
   window.rkEnsureCloudReady=rkWaitForCloudEngine;
+
+  // Expose a fast no-read startup marker used by the login flow.
+  window.rkCloudIsReady=()=>!!window.RK_CLOUD_READY;
 
   function mergeRealtime(table,payload){
     const localName=TABLES.find(x=>x[0]===table)?.[1];
