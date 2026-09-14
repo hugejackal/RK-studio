@@ -25,18 +25,6 @@ input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--border
 .formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.full{grid-column:1/-1}.label{font-size:13px;font-weight:700;margin-bottom:6px;display:block}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.show{display:flex}.modalbox{background:var(--card);color:var(--text);border-radius:calc(var(--radius) + 3px);width:min(720px,100%);max-height:90vh;overflow:auto;padding:22px}.modalhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.modalhead h2{margin:0}
 .invoice{max-width:850px;margin:auto;background:var(--card);border:1px solid var(--border);padding:34px;border-radius:16px}.invoicehead{display:flex;justify-content:space-between;gap:20px;border-bottom:2px solid #222;padding-bottom:20px}.invoice h2{margin:0}.invoice .total{font-size:25px;font-weight:800}.right{text-align:right}.invoice table{margin-top:22px}.invoice-actions{display:flex;gap:10px;justify-content:flex-end;margin-bottom:16px}
-
-.invoice-customer-block{display:flex;align-items:flex-start;gap:14px;margin:18px 0 20px;padding:2px 0;}
-.invoice-customer-photo{width:62px;min-width:62px;height:62px;display:flex;align-items:center;justify-content:center;}
-.invoice-customer-photo .avatar{width:62px;height:62px;border-radius:50%;font-size:22px;}
-.invoice-customer-details{font-size:13px;line-height:1.45;min-width:0;}
-.invoice-customer-details b{font-size:14px;}
-@media(max-width:700px){
-  .invoice-customer-block{gap:12px;margin:14px 0 18px;}
-  .invoice-customer-photo,.invoice-customer-photo .avatar{width:58px;height:58px;min-width:58px;}
-  .invoice-customer-photo .avatar{font-size:20px;}
-  .invoice-customer-details{font-size:12px;line-height:1.4;}
-}
 .calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}.day{background:var(--card);border:1px solid var(--border);min-height:100px;border-radius:10px;padding:9px}.event{font-size:11px;background:#eeeaff;color:#5239cc;padding:5px;border-radius:6px;margin-top:6px}
 .package-card{position:relative}.package-price{font-size:27px;font-weight:800;margin:12px 0}.package-list{padding-left:18px;color:var(--muted);line-height:1.8}.package-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:15px}.tag{display:inline-block;padding:4px 8px;border-radius:6px;background:#f2efff;color:#5b42d4;font-size:11px;font-weight:700;margin:3px 3px 0 0}.empty{padding:45px;text-align:center;color:var(--muted)}.hidden{display:none!important}
 
@@ -2876,7 +2864,8 @@ input:focus,select:focus,textarea:focus{box-shadow:0 0 0 3px rgba(124,58,237,.10
 
 
 
-</body></html>`);
+</body>
+</html>`);
   w.document.close();
   w.onload=()=>{
     setTimeout(()=>{w.focus();w.print();},150);
@@ -3115,7 +3104,7 @@ async function openInvoiceView(id){
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
 
-    <div class="invoice-customer-block"><div class="invoice-customer-photo">${typeof customerAvatar==="function"?customerAvatar(c):""}</div><div class="invoice-customer-details"><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
+    <div class="invoice-customer-block">${typeof customerAvatar==="function"?customerAvatar(c):""}<div><b>Bill To</b><br>${esc(c.name||"")}<br>${esc(c.phone||"")}<br>${esc(c.venue||"")}</div></div>
 
     <table class="invoice-items-table">
       <tr><th>Service</th><th>Qty</th><th>Rate</th><th>Total</th></tr>
@@ -4733,147 +4722,169 @@ async function shareInvoicePDF(invoiceId){
 async function rkCreateInvoicePDFBlob(invoiceId){
   const source=document.querySelector('#invoices .invoice');
   if(!source) throw new Error('Invoice is not open.');
-  if(!window.jspdf) throw new Error('PDF library not loaded');
+  if(!window.html2canvas || !window.jspdf) throw new Error('PDF libraries not loaded');
 
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({orientation:'p',unit:'mm',format:'a4',compress:true});
-  const margin=12;
-  const printableW=210-(margin*2);
+  const pageW=210, pageH=297, margin=10;
+  const usableW=pageW-margin*2, usableH=pageH-margin*2;
+  let hasPage=false;
 
-  const cleanup=(root)=>{
+  function cleanup(root){
     root.querySelectorAll(
-      '.invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,.invoice-top-actions,'+
-      '.invoice-action-bar,.print-hide,button,.rk-cloud-status,#rkCloudStaticStatus'
-    ).forEach(el=>el.remove());
+      '.invoice-actions,.invoice-toolbar,.invoice-controls,.invoice-view-actions,'+
+      '.invoice-top-actions,.invoice-action-bar,.print-hide,button'
+    ).forEach(x=>x.remove());
     root.querySelectorAll('a[href]').forEach(a=>a.removeAttribute('href'));
-  };
-
-  const forcePrintLook=(root)=>{
-    root.style.cssText=[
-      'width:794px','max-width:794px','box-sizing:border-box','margin:0','padding:34px',
-      'background:#fff','color:#111','border:0','border-radius:0','box-shadow:none','overflow:visible',
-      'font-family:Arial,sans-serif','opacity:1','filter:none'
-    ].join(';');
-
-    root.querySelectorAll('*').forEach(el=>{
-      el.style.opacity='1';
-      el.style.filter='none';
-      el.style.textShadow='none';
-      const tag=el.tagName;
-      const cls=String(el.className||'');
-      if(tag==='TH'||tag==='TD'||tag==='P'||tag==='LI'||tag==='SPAN'||tag==='DIV'||tag==='B'||tag==='STRONG'||tag==='H1'||tag==='H2'||tag==='H3'||tag==='H4'){
-        el.style.color='#111';
-        el.style.webkitTextFillColor='#111';
-      }
-      if(/muted|invoice-line-services|invoice-package-services|invoice-term-intro|invoice-shoot-row/i.test(cls)){
-        el.style.color='#555';
-        el.style.webkitTextFillColor='#555';
-      }
-    });
-
-    root.querySelectorAll('th').forEach(el=>{
-      el.style.color='#111';
-      el.style.webkitTextFillColor='#111';
-      el.style.fontWeight='800';
-    });
-    root.querySelectorAll('td').forEach(el=>{
-      el.style.color='#111';
-      el.style.webkitTextFillColor='#111';
-    });
-    root.querySelectorAll('.invoice-line-services,.invoice-package-services,.invoice-term,.invoice-terms-intro,.invoice-shoot-row').forEach(el=>{
-      el.style.color='#444';
-      el.style.webkitTextFillColor='#444';
-    });
-
-    const logo=root.querySelector('.rk-invoice-logo');
-    if(logo){
-      logo.style.width='180px';
-      logo.style.height='70px';
-      logo.style.maxWidth='180px';
-      logo.style.maxHeight='70px';
-      logo.style.objectFit='contain';
-      logo.style.objectPosition='left top';
-      logo.style.opacity='1';
-    }
-
-    root.querySelectorAll('.invoice-customer-photo .avatar,.invoice-customer-photo img').forEach(el=>{
-      el.style.width='62px';
-      el.style.height='62px';
-      el.style.minWidth='62px';
-      el.style.maxWidth='62px';
-      el.style.maxHeight='62px';
-      el.style.objectFit='cover';
-      el.style.borderRadius='50%';
-      el.style.opacity='1';
-    });
-
-    // Match print/PDF pagination rather than forcing a separate 3-page layout.
-    root.querySelectorAll('.invoice,.invoice-customer-block,.invoice-package-block,.invoice-deliverables-block,.payment-structure,.invoice-terms').forEach(el=>{
-      el.style.breakInside='auto';
-      el.style.pageBreakInside='auto';
-    });
-    root.querySelectorAll('.invoice-package-block,.invoice-deliverables-block,.invoice-customer-block').forEach(el=>{
-      el.style.breakAfter='auto';
-      el.style.pageBreakAfter='auto';
-    });
-    root.querySelectorAll('.payment-structure,.invoice-terms').forEach(el=>{
-      el.style.breakInside='auto';
-      el.style.pageBreakInside='auto';
-      el.style.orphans='2';
-      el.style.widows='2';
-    });
-  };
-
-  const holder=document.createElement('div');
-  holder.style.cssText='position:fixed;left:-100000px;top:0;width:794px;background:#fff;margin:0;padding:0;z-index:-1;overflow:visible;opacity:1;';
-  document.body.appendChild(holder);
-
-  try{
-    const clone=source.cloneNode(true);
-    cleanup(clone);
-    forcePrintLook(clone);
-
-    const terms=source.querySelector('.invoice-terms')||document.querySelector('#invoices .invoice-terms');
-    const payment=source.querySelector('.payment-structure')||document.querySelector('#invoices .payment-structure');
-    if(payment && !clone.querySelector('.payment-structure')) clone.appendChild(payment.cloneNode(true));
-    if(terms && !clone.querySelector('.invoice-terms')) clone.appendChild(terms.cloneNode(true));
-
-    forcePrintLook(clone);
-    holder.appendChild(clone);
-
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-
-    // Use jsPDF's HTML paginator so the WhatsApp PDF follows the same flow as
-    // browser print instead of slicing a large raster canvas at arbitrary cuts.
-    await new Promise((resolve,reject)=>{
-      pdf.html(clone,{
-        x:margin,
-        y:margin,
-        width:printableW,
-        windowWidth:794,
-        autoPaging:'text',
-        html2canvas:{
-          scale:2,
-          useCORS:true,
-          allowTaint:false,
-          backgroundColor:'#ffffff',
-          logging:false,
-          windowWidth:794,
-          imageTimeout:15000,
-          foreignObjectRendering:false
-        },
-        pagebreak:{mode:['css','legacy']},
-        callback:()=>resolve(),
-        error:err=>reject(err)
-      });
-    });
-
-    return pdf.output('blob');
-  }finally{
-    holder.remove();
   }
-}
 
+  function makeHolder(){
+    const h=document.createElement('div');
+    h.style.cssText=[
+      'position:fixed','left:-100000px','top:0','width:794px',
+      'background:#fff','color:#111','margin:0','padding:0','z-index:-1',
+      'font-family:Arial,sans-serif'
+    ].join(';');
+    document.body.appendChild(h);
+    return h;
+  }
+
+  // Remove trailing canvas whitespace so a tiny overflow does not create
+  // a visually blank A4 page.
+  function trimCanvas(canvas){
+    const ctx=canvas.getContext('2d');
+    const {width,height}=canvas;
+    const data=ctx.getImageData(0,0,width,height).data;
+    let top=height, bottom=-1, left=width, right=-1;
+    const threshold=248; // treat near-white as page background
+    for(let y=0;y<height;y+=2){
+      for(let x=0;x<width;x+=2){
+        const p=(y*width+x)*4;
+        const a=data[p+3];
+        if(a>0 && (data[p]<threshold || data[p+1]<threshold || data[p+2]<threshold)){
+          if(y<top) top=y;
+          if(y>bottom) bottom=y;
+          if(x<left) left=x;
+          if(x>right) right=x;
+        }
+      }
+    }
+    if(bottom<0) return canvas;
+    const pad=8;
+    top=Math.max(0,top-pad);
+    bottom=Math.min(height-1,bottom+pad);
+    left=Math.max(0,left-pad);
+    right=Math.min(width-1,right+pad);
+    const out=document.createElement('canvas');
+    out.width=right-left+1;
+    out.height=bottom-top+1;
+    out.getContext('2d').drawImage(canvas,left,top,out.width,out.height,0,0,out.width,out.height);
+    return out;
+  }
+
+  function getSafeCuts(root){
+    const cuts=new Set([0]);
+    const top=root.getBoundingClientRect().top;
+    const selectors=[
+      ':scope > *','tr','.invoice-package-block','.invoice-shoot-row',
+      '.invoice-deliverables-block','.invoice-term','.invoice-terms-intro',
+      '.payment-structure > *','.invoice-terms > *'
+    ];
+    selectors.forEach(sel=>{
+      try{
+        root.querySelectorAll(sel).forEach(el=>{
+          const r=el.getBoundingClientRect();
+          if(r.width>0 && r.height>0) cuts.add(Math.round((r.bottom-top)*2));
+        });
+      }catch(e){}
+    });
+    return [...cuts].filter(v=>v>0).sort((a,b)=>a-b);
+  }
+
+  function addCanvasPages(rawCanvas,cuts){
+    const canvas=trimCanvas(rawCanvas);
+    const maxPx=Math.max(1,Math.floor((usableH/usableW)*canvas.width));
+    let y=0;
+
+    while(y<canvas.height-4){
+      const target=Math.min(canvas.height,y+maxPx);
+      let cut=cuts.filter(v=>v>y+12 && v<=target).pop();
+      if(!cut || cut<=y) cut=target;
+      cut=Math.min(cut,canvas.height);
+
+      if(hasPage) pdf.addPage();
+      hasPage=true;
+
+      const sliceH=Math.max(1,cut-y);
+      const slice=document.createElement('canvas');
+      slice.width=canvas.width;
+      slice.height=Math.ceil(sliceH);
+
+      const ctx=slice.getContext('2d');
+      ctx.fillStyle='#fff';
+      ctx.fillRect(0,0,slice.width,slice.height);
+      ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
+
+      const img=slice.toDataURL('image/jpeg',0.96);
+      const mmH=(slice.height*usableW)/canvas.width;
+      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
+
+      y=cut;
+    }
+  }
+
+  async function renderNode(node){
+    const holder=makeHolder();
+    const clone=node.cloneNode(true);
+    cleanup(clone);
+    clone.style.cssText=[
+      'width:794px','max-width:794px','background:#fff','color:#111',
+      'margin:0','padding:0','box-sizing:border-box'
+    ].join(';');
+    holder.appendChild(clone);
+    try{
+      const canvas=await html2canvas(clone,{
+        scale:2,useCORS:true,backgroundColor:'#fff',
+        logging:false,windowWidth:794,imageTimeout:15000
+      });
+      addCanvasPages(canvas,getSafeCuts(clone));
+    }finally{
+      holder.remove();
+    }
+  }
+
+  // Main invoice: identical content to Print / Save PDF, excluding only
+  // Payment Structure and the Agreement so they can begin cleanly on the
+  // following page without creating an empty overflow page.
+  const main=source.cloneNode(true);
+  main.querySelectorAll('.payment-structure,.invoice-terms').forEach(x=>x.remove());
+  await renderNode(main);
+
+  // These are real invoice sections; Agreement may be outside .invoice.
+  const payment=source.querySelector('.payment-structure') ||
+                document.querySelector('#invoices .payment-structure');
+  const terms=document.querySelector('#invoices .invoice-terms') ||
+              source.querySelector('.invoice-terms');
+
+  const tail=document.createElement('div');
+  tail.style.cssText='width:794px;background:#fff;color:#111;margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif;';
+
+  if(payment){
+    const p=payment.cloneNode(true);
+    p.style.cssText+=';margin:0 0 14px 0!important;box-sizing:border-box;width:100%;';
+    tail.appendChild(p);
+  }
+  if(terms){
+    const a=terms.cloneNode(true);
+    a.style.cssText+=';margin:0!important;box-sizing:border-box;width:100%;';
+    tail.appendChild(a);
+  }
+
+  if(payment || terms) await renderNode(tail);
+
+  if(!hasPage) throw new Error('Invoice PDF contains no renderable content.');
+  return pdf.output('blob');
+}
 function openInvoiceFromAnywhere(invoiceId){
   const inv=(db.invoices||[]).find(x=>String(x.id)===String(invoiceId));
   if(!inv){alert("Invoice not found.");return;}
@@ -6133,6 +6144,7 @@ window.rkCloudSyncSettings=async function(){
     welcome_enabled:s?.welcome?.enabled!==false,welcome_title:s?.welcome?.title||null,welcome_message:s?.welcome?.message||null,welcome_duration_ms:Number(s?.welcome?.duration||1400),
     whatsapp_templates:s?.waTemplates||{},extra_services:s?.extraServices||[],custom_settings:s||{}};}
   function applySettings(r){if(!r)return;const e=r.custom_settings||{};db.settings={...db.settings,...e,studio:r.studio_name||e.studio||'RK Studio',phone:r.phone||e.phone||'',address:r.address||e.address||'',companyLogoPath:r.company_logo_path||e.companyLogoPath||'',primary:r.primary_color||e.primary||'#6c4df6',secondary:r.secondary_color||e.secondary||'#9a84ff',background:r.background_color||e.background||'#f5f6fa',cardColor:r.card_color||e.cardColor||'#fff',theme:r.theme||e.theme||'light',sidebar:r.sidebar_style||e.sidebar||'dark',sidebarColor:r.sidebar_color||e.sidebarColor||'#17151f',compact:r.compact||e.compact||'no',sidebarWidth:Number(r.sidebar_width||e.sidebarWidth||245),radius:Number(r.radius||e.radius||15),fontSize:Number(r.font_size||e.fontSize||16),fontFamily:r.font_family||e.fontFamily||'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:r.shadow||e.shadow||'soft',cardBorder:r.card_border||e.cardBorder||'on',buttonStyle:r.button_style||e.buttonStyle||'rounded',extraServices:r.extra_services||e.extraServices||[]};}
+  window.rkApplySettingsFromCloud=applySettings;
 
   async function hydrate(){
     if(!isCloud())return false;
@@ -6228,11 +6240,12 @@ window.rkCloudSyncSettings=async function(){
   async function syncSettingsNow(){
     try{
       if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase' || !window.RK_CLOUD_READY) return false;
-      const {data,rowError}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
-      if(rowError) throw rowError;
-      if(!data || typeof window.rowToSettings!=='function') return false;
-      const next=window.rowToSettings(data);
+      const {data,error}=await window.RK_SUPABASE.from('studio_settings').select('*').eq('id',true).maybeSingle();
+      if(error) throw error;
+      if(!data || typeof window.rkApplySettingsFromCloud!=='function') return false;
       const before=JSON.stringify(db.settings||{});
+      window.rkApplySettingsFromCloud(data);
+      const next=db.settings||{};
       const after=JSON.stringify(next||{});
       if(before!==after){
         db.settings=next;
@@ -6299,13 +6312,77 @@ window.rkCloudSyncSettings=async function(){
   // propagate even when the Supabase project has not enabled Realtime for
   // studio_settings yet. It also runs immediately when the page becomes visible.
   let timer=null;
+  async function refreshVisible(){
+    if(document.hidden || sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return;
+    try{
+      if(typeof window.rkCloudHydratePhase3==='function') await window.rkCloudHydratePhase3();
+      if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
+    }catch(e){ console.warn('Periodic cloud refresh failed:',e); }
+    await syncSettingsNow();
+  }
   function start(){
     clearInterval(timer);
-    timer=setInterval(()=>{ if(!document.hidden) syncSettingsNow(); },5000);
-    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncSettingsNow(); });
+    timer=setInterval(refreshVisible,10000);
+    document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshVisible(); });
   }
   start();
-  syncSettingsNow();
+  refreshVisible();
+})();
+</script>
+<script id="rk-v169-instant-cloud-on-open">
+(function(){
+  /* Instant server refresh on every deployed app open/return.
+     Runs only after a real Supabase session exists, never for local file/localhost mode. */
+  let refreshing=false;
+  let refreshPromise=null;
+  async function waitForEngine(timeoutMs=15000){
+    const start=Date.now();
+    while(typeof window.rkCloudHydratePhase3!=='function'){
+      if(Date.now()-start>timeoutMs) return false;
+      await new Promise(r=>setTimeout(r,20));
+    }
+    return true;
+  }
+  async function refreshNow(reason){
+    if(!window.RK_DEPLOYED_MODE) return true;
+    if(sessionStorage.getItem('rkStudioAuthProvider')!=='supabase') return false;
+    if(refreshing && refreshPromise) return refreshPromise;
+    refreshing=true;
+    refreshPromise=(async()=>{
+      try{
+        const ready=await waitForEngine();
+        if(!ready) throw new Error('Cloud sync engine not ready');
+        if(typeof window.status==='function') window.status('syncing','Syncing latest server data…');
+        const ok=await window.rkCloudHydratePhase3();
+        if(!ok) throw new Error(window.RK_CLOUD_LAST_ERROR||'Cloud refresh failed');
+        if(typeof window.rkCloudStartRealtimePhase3==='function') window.rkCloudStartRealtimePhase3();
+        window.RK_CLOUD_LAST_ERROR='';
+        if(typeof window.status==='function') window.status('synced','Latest server data loaded.');
+        return true;
+      }catch(e){
+        console.error('Instant cloud refresh failed:',reason,e);
+        window.RK_CLOUD_LAST_ERROR=e?.message||String(e);
+        if(typeof window.status==='function') window.status('local','Cloud refresh failed: '+window.RK_CLOUD_LAST_ERROR);
+        return false;
+      }finally{
+        refreshing=false;
+        refreshPromise=null;
+      }
+    })();
+    return refreshPromise;
+  }
+  window.rkRefreshCloudNow=refreshNow;
+
+  window.addEventListener('DOMContentLoaded',()=>{
+    // Session restoration/login already performs a blocking hydration before app display.
+    // This second call guarantees a fresh server read immediately after the page is mounted.
+    setTimeout(()=>{ refreshNow('startup'); },0);
+  },{once:true});
+
+  window.addEventListener('pageshow',()=>{ refreshNow('pageshow'); });
+  document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden) refreshNow('visibility');
+  });
 })();
 </script>
 </html>
