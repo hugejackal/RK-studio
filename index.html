@@ -1583,7 +1583,7 @@ button:disabled,.btn:disabled,.small:disabled,.login-btn:disabled{
 }
 #loginScreen .login-btn:hover::after{transform:translateX(130%)}
 #loginScreen form::after{
-  content:"🔒 Secure studio login · Session expires after 5 minutes of inactivity";
+  content:"🔒 Secure studio login · Session stays active until you log out";
   display:block;
   margin-top:12px;
   padding:10px 12px;
@@ -4924,34 +4924,9 @@ function customerTimeline(cid){
 </script>
 <script>
 (function(){
-  const AUTO_LOGOUT_MS=5*60*1000;
-  let timer=null,lastActivity=Date.now();
-  function loggedIn(){
-    try{
-      return sessionStorage.getItem("rkStudioAuthenticated")==="1" ||
-             !!sessionStorage.getItem("rkStudioUserId") ||
-             !!localStorage.getItem("rkStudioLoggedIn") ||
-             !!localStorage.getItem("shaadiStudio_loggedIn");
-    }catch(e){return false;}
-  }
-  function reset(){
-    lastActivity=Date.now();
-    clearTimeout(timer);
-    if(!loggedIn()) return;
-    timer=setTimeout(function(){
-      if(Date.now()-lastActivity>=AUTO_LOGOUT_MS){
-        if(typeof logout==="function") logout();
-        else if(typeof showLogin==="function") showLogin();
-        else location.reload();
-      }else reset();
-    },AUTO_LOGOUT_MS+250);
-  }
-  ["click","pointerdown","keydown","touchstart","scroll"].forEach(function(ev){
-    document.addEventListener(ev,reset,{passive:true});
-  });
-  document.addEventListener("visibilitychange",function(){if(!document.hidden)reset();});
-  window.rkResetAutoLogout=reset;
-  setTimeout(reset,500);
+  // Session timeout disabled: keep the authenticated session alive until
+  // the user explicitly logs out or Supabase Auth/session policy expires it.
+  window.rkResetAutoLogout=function(){};
 })();
 </script>
 
