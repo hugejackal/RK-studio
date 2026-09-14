@@ -140,7 +140,7 @@ nav button{display:flex;align-items:center;gap:2px}
 .logo-setting{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
 .company-logo-preview{width:210px;height:110px;border:1px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--input-bg)}
 .company-logo-preview img{max-width:200px;max-height:100px;object-fit:contain}
-.rk-invoice-logo{display:block;max-width:180px;max-height:70px;object-fit:contain;margin-bottom:8px}
+.rk-invoice-logo{display:block;width:var(--invoice-logo-width,180px);max-width:100%;height:var(--invoice-logo-height,70px);object-fit:contain;object-position:left top;margin-bottom:8px}
 .extra-service-box{margin:18px 0;padding:14px;border:1px dashed var(--primary);border-radius:12px;background:var(--card)}
 .extra-grid{display:grid;grid-template-columns:2fr .7fr 1fr auto;gap:8px;align-items:center}
 .custom-extra{margin-top:9px}
@@ -1583,7 +1583,7 @@ button:disabled,.btn:disabled,.small:disabled,.login-btn:disabled{
 }
 #loginScreen .login-btn:hover::after{transform:translateX(130%)}
 #loginScreen form::after{
-  content:"🔒 Secure studio login · Session stays active until you log out";
+  content:"🔒 Secure studio login · Session expires after 5 minutes of inactivity";
   display:block;
   margin-top:12px;
   padding:10px 12px;
@@ -2189,7 +2189,7 @@ window.RK_SUPABASE_URL="https://hkivqeonfsrfmethqmhc.supabase.co";
 window.RK_SUPABASE_PUBLISHABLE_KEY="sb_publishable_TEFeA55ricEVhKlMwNf8hw_cL7FMH6o";
 window.RK_SUPABASE=null;
 try{
-  if(window.supabase?.createClient){
+  if(window.RK_CLOUD_ENABLED && window.supabase?.createClient){
     window.RK_SUPABASE=window.supabase.createClient(
       window.RK_SUPABASE_URL,
       window.RK_SUPABASE_PUBLISHABLE_KEY,
@@ -2254,12 +2254,19 @@ try{
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
 const KEY='shaadiStudio_v1';
-/* RK Studio server-authoritative mode: Supabase is the source of truth. */
-const RK_SERVER_ONLY=true;
+/*
+ * Environment rule:
+ * - Local file / localhost: run in local test mode, NEVER contact Supabase.
+ * - Deployed HTTPS site: Supabase is the server source of truth.
+ * This lets you freely test the HTML without touching production data.
+ */
+const RK_DEPLOYED = !!(window.location && window.location.protocol === 'https:' &&
+  !['localhost','127.0.0.1','::1'].includes(String(window.location.hostname||'').toLowerCase()));
+const RK_SERVER_ONLY = RK_DEPLOYED;
+window.RK_DEPLOYED = RK_DEPLOYED;
+window.RK_CLOUD_ENABLED = RK_DEPLOYED;
 let db=null;
-if(!RK_SERVER_ONLY){
-  try{ db=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ db=null; }
-}
+try{ db=JSON.parse(localStorage.getItem(KEY)||'null'); }catch(e){ db=null; }
 db=db||{
 settings:{studio:"RK Studio",phone:"",address:""},
 customers:[],events:[],invoices:[],packages:[{id:"p1",name:"Classic Wedding",price:55000,items:["Traditional Photography","Full Wedding Video","1 Premium Album","All Edited Photos"]},{id:"p2",name:"Premium Wedding",price:85000,items:["Candid + Traditional Photography","Cinematic Wedding Film","2 Premium Albums","Drone Coverage","All Edited Photos"]},{id:"p3",name:"Royal Wedding",price:125000,items:["2 Photographers","2 Videographers","Cinematic Film","Drone + 4K Coverage","2 Premium Albums","Pre-Wedding Shoot","All Edited Photos"]}]
@@ -3084,7 +3091,7 @@ async function openInvoiceView(id){
   </div>
   <div class="invoice">
     <div class="invoicehead">
-      <div>${db.settings?.companyLogo?`<img class="rk-invoice-logo" src="${db.settings.companyLogo}" alt="Company Logo">`:``}
+      <div>${db.settings?.companyLogo?`<img class="rk-invoice-logo" style="--invoice-logo-width:${Number(db.settings?.invoiceLogoWidth||180)}px;--invoice-logo-height:${Number(db.settings?.invoiceLogoHeight||70)}px" src="${db.settings.companyLogo}" alt="Company Logo">`:``}
         <h2>${esc(db.settings?.studio||"RK Studio")}</h2>
         <div class="muted">${esc(db.settings?.address||"")}</div>
         <div class="muted">${esc(db.settings?.phone||"")}</div>
@@ -3745,6 +3752,7 @@ settings.innerHTML=`<div class="top"><div><h1>Settings</h1><div class="sub">RK S
   </div>
 </div>
 <div class="card" style="margin-top:16px"><h3>UI Customization</h3><div class="muted">Customize RK Studio without changing your business data.</div>
+<div class="settings-section"><h4>🧾 Invoice & PDF</h4><div class="formgrid"><div><label class="label">Invoice Logo Width</label><input type="range" min="60" max="320" step="5" id="invoice_logo_width" value="${Number(st.invoiceLogoWidth||180)}" oninput="invoice_logo_width_value.textContent=this.value+'px'"><div class="muted" id="invoice_logo_width_value">${Number(st.invoiceLogoWidth||180)}px</div></div><div><label class="label">Invoice Logo Height</label><input type="range" min="30" max="160" step="5" id="invoice_logo_height" value="${Number(st.invoiceLogoHeight||70)}" oninput="invoice_logo_height_value.textContent=this.value+'px'"><div class="muted" id="invoice_logo_height_value">${Number(st.invoiceLogoHeight||70)}px</div></div></div><div class="muted" style="margin-top:8px">Controls the maximum displayed logo area on the invoice and Print / Save PDF.</div></div>
 <div class="settings-section"><h4>Colors & Theme</h4><div class="formgrid"><div><label class="label">Primary Color</label><input type="color" id="ui_primary" value="${esc(st.primary||'#6c4df6')}" style="height:46px;padding:4px"></div><div><label class="label">Secondary Color</label><input type="color" id="ui_secondary" value="${esc(st.secondary||'#9a84ff')}" style="height:46px;padding:4px"></div><div><label class="label">Page Background</label><input type="color" id="ui_background" value="${esc(st.background||'#f5f6fa')}" style="height:46px;padding:4px"></div><div><label class="label">Card Color</label><input type="color" id="ui_card" value="${esc(st.cardColor||'#ffffff')}" style="height:46px;padding:4px"></div><div><label class="label">Appearance</label><select id="ui_theme"><option value="light" ${(st.theme||'light')==='light'?'selected':''}>Light</option><option value="dark" ${st.theme==='dark'?'selected':''}>Dark</option></select></div><div><label class="label">Sidebar Style</label><select id="ui_sidebar"><option value="dark" ${(st.sidebar||'dark')==='dark'?'selected':''}>Dark</option><option value="light" ${st.sidebar==='light'?'selected':''}>Light</option></select></div><div><label class="label">Sidebar Color</label><input type="color" id="ui_sidebar_color" value="${esc(st.sidebarColor||'#17151f')}" style="height:46px;padding:4px"></div></div></div>
 <div class="settings-section"><h4>Layout & Sizing</h4><div class="formgrid"><div><label class="label">Table Density</label><select id="ui_compact"><option value="no" ${(st.compact||'no')==='no'?'selected':''}>Comfortable</option><option value="yes" ${st.compact==='yes'?'selected':''}>Compact</option></select></div><div><label class="label">Sidebar Width</label><select id="ui_sidebar_width"><option value="210" ${st.sidebarWidth==210?'selected':''}>Narrow</option><option value="245" ${!st.sidebarWidth||st.sidebarWidth==245?'selected':''}>Normal</option><option value="285" ${st.sidebarWidth==285?'selected':''}>Wide</option></select></div><div><label class="label">Corner Radius</label><input type="range" min="4" max="28" id="ui_radius" value="${Number(st.radius||15)}" oninput="ui_radius_value.textContent=this.value+'px'"><div class="muted" id="ui_radius_value">${Number(st.radius||15)}px</div></div><div><label class="label">Font Size</label><input type="range" min="13" max="19" id="ui_font_size" value="${Number(st.fontSize||16)}" oninput="ui_font_size_value.textContent=this.value+'px'"><div class="muted" id="ui_font_size_value">${Number(st.fontSize||16)}px</div></div></div></div>
 <div class="settings-section"><h4>Typography & Components</h4><div class="formgrid"><div><label class="label">Font Family</label><select id="ui_font"><option value="Inter,system-ui,-apple-system,Segoe UI,sans-serif" ${(st.fontFamily||'').startsWith('Inter')||!st.fontFamily?'selected':''}>Modern / Inter</option><option value="Georgia,serif" ${st.fontFamily==='Georgia,serif'?'selected':''}>Elegant / Georgia</option><option value="Arial,sans-serif" ${st.fontFamily==='Arial,sans-serif'?'selected':''}>Classic / Arial</option><option value="Trebuchet MS,sans-serif" ${st.fontFamily==='Trebuchet MS,sans-serif'?'selected':''}>Friendly / Trebuchet</option></select></div><div><label class="label">Card Shadow</label><select id="ui_shadow"><option value="none" ${st.shadow==='none'?'selected':''}>None</option><option value="soft" ${(st.shadow||'soft')==='soft'?'selected':''}>Soft</option><option value="strong" ${st.shadow==='strong'?'selected':''}>Strong</option></select></div><div><label class="label">Card Border</label><select id="ui_card_border"><option value="on" ${(st.cardBorder||'on')==='on'?'selected':''}>On</option><option value="off" ${st.cardBorder==='off'?'selected':''}>Off</option></select></div><div><label class="label">Button Style</label><select id="ui_button_style"><option value="rounded" ${(st.buttonStyle||'rounded')==='rounded'?'selected':''}>Rounded</option><option value="pill" ${st.buttonStyle==='pill'?'selected':''}>Pill</option><option value="square" ${st.buttonStyle==='square'?'selected':''}>Square</option><option value="raised" ${st.buttonStyle==='raised'?'selected':''}>Raised</option></select></div></div></div>
@@ -3816,7 +3824,9 @@ async function saveSettings(){
     fontFamily:$('ui_font')?.value||db.settings.fontFamily||'Inter,system-ui,-apple-system,Segoe UI,sans-serif',
     shadow:$('ui_shadow')?.value||db.settings.shadow||'soft',
     cardBorder:$('ui_card_border')?.value||db.settings.cardBorder||'on',
-    buttonStyle:$('ui_button_style')?.value||db.settings.buttonStyle||'rounded'
+    buttonStyle:$('ui_button_style')?.value||db.settings.buttonStyle||'rounded',
+    invoiceLogoWidth:Math.min(320,Math.max(60,Number($('invoice_logo_width')?.value||db.settings.invoiceLogoWidth||180))),
+    invoiceLogoHeight:Math.min(160,Math.max(30,Number($('invoice_logo_height')?.value||db.settings.invoiceLogoHeight||70)))
   };
 
   db.settings=next;
@@ -3841,7 +3851,7 @@ async function saveSettings(){
     rkToast('Settings saved');
   }
 }
-function resetUISettings(){if(!confirm('Reset only UI customization to default?'))return;db.settings={...db.settings,studio:db.settings.studio||'RK Studio',primary:'#6c4df6',secondary:'#9a84ff',background:'#f5f6fa',cardColor:'#ffffff',theme:'light',sidebar:'dark',sidebarColor:'#17151f',compact:'no',sidebarWidth:245,radius:15,fontSize:16,fontFamily:'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:'soft',cardBorder:'on',buttonStyle:'rounded'};save();applyUI();render();}
+function resetUISettings(){if(!confirm('Reset only UI customization to default?'))return;db.settings={...db.settings,studio:db.settings.studio||'RK Studio',primary:'#6c4df6',secondary:'#9a84ff',background:'#f5f6fa',cardColor:'#ffffff',theme:'light',sidebar:'dark',sidebarColor:'#17151f',compact:'no',sidebarWidth:245,radius:15,fontSize:16,fontFamily:'Inter,system-ui,-apple-system,Segoe UI,sans-serif',shadow:'soft',cardBorder:'on',buttonStyle:'rounded',invoiceLogoWidth:180,invoiceLogoHeight:70};save();applyUI();render();}
 function backupStudioData(){
   if(!hasPermission('settings'))return alert('You do not have permission to create a backup.');
   try{
@@ -3950,7 +3960,7 @@ async function login(ev){
   const loginError=document.getElementById('loginError');
   loginError.textContent='';
 
-  if(window.RK_SUPABASE){
+  if(window.RK_CLOUD_ENABLED && window.RK_SUPABASE){
     try{
       let email=loginValue;
       if(!email.includes('@')){
@@ -4100,7 +4110,7 @@ async function restoreCloudSession(){
 
 (async function bootstrapAuth(){
   const provider=sessionStorage.getItem('rkStudioAuthProvider');
-  if(provider==='supabase'){
+  if(window.RK_CLOUD_ENABLED && provider==='supabase'){
     const restored=await restoreCloudSession();
     if(restored)return;
   }
@@ -4924,9 +4934,34 @@ function customerTimeline(cid){
 </script>
 <script>
 (function(){
-  // Session timeout disabled: keep the authenticated session alive until
-  // the user explicitly logs out or Supabase Auth/session policy expires it.
-  window.rkResetAutoLogout=function(){};
+  const AUTO_LOGOUT_MS=5*60*1000;
+  let timer=null,lastActivity=Date.now();
+  function loggedIn(){
+    try{
+      return sessionStorage.getItem("rkStudioAuthenticated")==="1" ||
+             !!sessionStorage.getItem("rkStudioUserId") ||
+             !!localStorage.getItem("rkStudioLoggedIn") ||
+             !!localStorage.getItem("shaadiStudio_loggedIn");
+    }catch(e){return false;}
+  }
+  function reset(){
+    lastActivity=Date.now();
+    clearTimeout(timer);
+    if(!loggedIn()) return;
+    timer=setTimeout(function(){
+      if(Date.now()-lastActivity>=AUTO_LOGOUT_MS){
+        if(typeof logout==="function") logout();
+        else if(typeof showLogin==="function") showLogin();
+        else location.reload();
+      }else reset();
+    },AUTO_LOGOUT_MS+250);
+  }
+  ["click","pointerdown","keydown","touchstart","scroll"].forEach(function(ev){
+    document.addEventListener(ev,reset,{passive:true});
+  });
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)reset();});
+  window.rkResetAutoLogout=reset;
+  setTimeout(reset,500);
 })();
 </script>
 
@@ -4983,8 +5018,13 @@ function customerTimeline(cid){
   let syncTimer=null,running=false,subscriptions=[];
 
   const cloud=()=>window.RK_SUPABASE;
-  const cloudSession=()=>!!cloud() && sessionStorage.getItem('rkStudioAuthProvider')==='supabase';
+  const cloudSession=()=>!!window.RK_CLOUD_ENABLED && !!cloud() && sessionStorage.getItem('rkStudioAuthProvider')==='supabase';
   function status(state,msg){
+    if(!window.RK_CLOUD_ENABLED){
+      window.RK_CLOUD_STATUS='local';
+      window.RK_CLOUD_STATUS_MESSAGE='Local test mode · Supabase is disabled for this HTML file.';
+      return;
+    }
     window.RK_CLOUD_STATUS=state; window.RK_CLOUD_STATUS_MESSAGE=msg||'';
     document.querySelectorAll('[data-rk-cloud-status]').forEach(el=>{
       el.textContent=state==='syncing'?'☁ Syncing…':state==='synced'?'☁ Synced':'☁ Local';
@@ -5143,14 +5183,18 @@ function customerTimeline(cid){
   async function hydrateTable(table){
     const {data,error}=await cloud().from(table.name).select('*');
     if(error)throw error;
-    const remote=data||[];
-    if(table.name==='customers')db.customers=remoteToLocal(table,remote);
-    if(table.name==='shoots')db.events=remoteToLocal(table,remote);
-    if(table.name==='packages')db.packages=remoteToLocal(table,remote);
-    if(table.name==='invoices')db.invoices=remoteToLocal(table,remote);
-    if(table.name==='payments')db.payments=remoteToLocal(table,remote);
-    if(table.name==='expenses')db.expenses=remoteToLocal(table,remote);
-    if(table.name==='activity_logs')db.activityLog=remoteToLocal(table,remote);
+    const remote=data||[],local=localRows(table),remoteIds=new Set(remote.map(r=>String(r.id)));
+    const localOnly=local.filter(r=>!remoteIds.has(String(r.id)));
+    if(remote.length===0&&local.length){await push(table);return}
+    if(localOnly.length){const {error:e2}=await cloud().from(table.name).upsert(localOnly,{onConflict:'id'});if(e2)throw e2}
+    const combined=remote.concat(localOnly);
+    if(table.name==='customers')db.customers=remoteToLocal(table,combined);
+    if(table.name==='shoots')db.events=remoteToLocal(table,combined);
+    if(table.name==='packages')db.packages=remoteToLocal(table,combined);
+    if(table.name==='invoices')db.invoices=remoteToLocal(table,combined);
+    if(table.name==='payments')db.payments=remoteToLocal(table,combined);
+    if(table.name==='expenses')db.expenses=remoteToLocal(table,combined);
+    if(table.name==='activity_logs')db.activityLog=remoteToLocal(table,combined);
   }
   async function hydrate(){
     if(!cloudSession())return false;
@@ -5168,52 +5212,20 @@ function customerTimeline(cid){
     if(!RK_SERVER_ONLY) localStorage.setItem(KEY,JSON.stringify(db)); if(typeof render==='function')render();
     status('synced','Cloud data loaded.'); window.RK_CLOUD_LAST_ERROR=''; return true;
   }
-  const dirtyQueue=new Map();
-  function markDirty(tableName,ids){
-    if(!cloudSession()||!ids)return;
-    const key=String(tableName), set=dirtyQueue.get(key)||new Set();
-    (Array.isArray(ids)?ids:[ids]).forEach(id=>{if(id!==undefined&&id!==null&&String(id)!=='')set.add(String(id));});
-    if(set.size)dirtyQueue.set(key,set);
-    if(window.rkCloudScheduleSave) window.rkCloudScheduleSave();
-  }
-  window.rkCloudMarkDirty=markDirty;
-
-  async function push(table,onlyIds=null){
-    let rows=localRows(table);
-    if(onlyIds && onlyIds.size) rows=rows.filter(x=>onlyIds.has(String(x.id)));
-    if(!rows.length)return {count:0};
-    const uid=await authUserId();
-    if((table.name==='payments'||table.name==='expenses'||table.name==='activity_logs')&&uid){
-      rows=rows.map(x=>({...x,...(table.name==='activity_logs'?{user_id:uid}:{created_by:uid})}));
-    }
-    const {error}=await cloud().from(table.name).upsert(rows,{onConflict:'id'});
-    if(error)throw new Error(`${table.name}: ${error.message||JSON.stringify(error)}`);
-    return {count:rows.length};
-  }
-
   async function syncNow(){
     if(running||!cloudSession())return; running=true;
     try{
-      const entries=[...dirtyQueue.entries()];
-      if(!entries.length){status('synced','Cloud synced');window.RK_CLOUD_LAST_ERROR='';return;}
-      status('syncing','Saving to Supabase…');
+      status('syncing','Syncing changes…');
       const failures=[];
-      for(const [tableName,ids] of entries){
-        const table=CLOUD_TABLES.find(x=>x.name===tableName);
-        if(!table){dirtyQueue.delete(tableName);continue;}
-        try{
-          await push(table,ids);
-          dirtyQueue.delete(tableName);
-        }catch(e){
-          console.error('Cloud sync failed for',table.name,e);
-          failures.push(e.message||String(e));
-        }
+      for(const table of CLOUD_TABLES){
+        try{await push(table)}
+        catch(e){console.error('Cloud sync failed for',table.name,e);failures.push(e.message||String(e));}
       }
       if(failures.length){
         status('local',`Cloud sync needs attention: ${failures[0]}`);
         window.RK_CLOUD_LAST_ERROR=failures.join(' | ');
       }else{
-        status('synced','Cloud synced');
+        status('synced','Cloud sync complete.');
         window.RK_CLOUD_LAST_ERROR='';
       }
     }finally{running=false}
@@ -5226,12 +5238,6 @@ function customerTimeline(cid){
     const ch=cloud().channel('rk-v139-'+tableName).on('postgres_changes',{event:'*',schema:'public',table:tableName},payload=>{
       try{
         const upsert=(arr,obj)=>{const i=arr.findIndex(x=>String(x.id)===String(obj.id));if(i>=0)arr[i]=obj;else arr.push(obj)};
-        if(tableName==='studio_settings'){
-          if(payload.eventType==='DELETE') db.settings={studio:'RK Studio',phone:'',address:''};
-          else if(typeof rowToSettings==='function') db.settings=rowToSettings(payload.new);
-          if(typeof applyUI==='function')applyUI();
-          if(typeof renderSettings==='function' && !document.getElementById('settings')?.classList.contains('hidden'))renderSettings();
-        }
         if(tableName==='customers'){if(payload.eventType==='DELETE')db.customers=db.customers.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.customers,rowToCustomer(payload.new))}
         if(tableName==='shoots'){if(payload.eventType==='DELETE')db.events=db.events.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.events,rowToShoot(payload.new))}
         if(tableName==='packages'){if(payload.eventType==='DELETE')db.packages=db.packages.filter(x=>String(x.id)!==String(payload.old.id));else upsert(db.packages,rowToPackage(payload.new))}
@@ -5249,7 +5255,6 @@ function customerTimeline(cid){
   function startRealtime(){
     subscriptions.forEach(c=>{try{cloud().removeChannel(c)}catch(e){}});subscriptions=[];
     CLOUD_TABLES.forEach(x=>subscribe(x.name));
-    subscribe('studio_settings');
   }
   window.rkCloudStartRealtimePhase3=startRealtime;
   setTimeout(async()=>{if(cloudSession()){try{await hydrate();startRealtime()}catch(e){console.warn('Cloud bootstrap skipped',e);status('local','Cloud bootstrap failed')}}},900);
@@ -5547,10 +5552,6 @@ function customerTimeline(cid){
   }
 
   async function migrate(){
-    if(typeof RK_SERVER_ONLY!=='undefined' && RK_SERVER_ONLY){
-      setMsg('Server-only mode is active. No browser-to-cloud migration is required.','info');
-      return;
-    }
     if(!isCloud()){setMsg('Login with Supabase first.','error');return;}
     const btn=document.getElementById('rkMigrationRun');
     if(btn)btn.disabled=true;
@@ -5988,105 +5989,6 @@ window.rkCloudSyncSettings=async function(){
       if(fn && typeof window[fn]==='function')window[fn]();
     }catch(e){console.warn('RK current-page refresh skipped',e)}
   };
-})();
-</script>
-
-<script id="rk-v160-server-only-multi-user">
-(function(){
-  if(typeof RK_SERVER_ONLY==='undefined' || !RK_SERVER_ONLY) return;
-
-  const tableMap={
-    saveCustomer:['customers'], saveEvent:['shoots'], savePackage:['packages'],
-    saveInvoice:['invoices','payments'], savePayment:['payments'], saveExpense:['expenses']
-  };
-
-  function snapshotTable(table){
-    const arr=Array.isArray(db?.[table])?db[table]:[];
-    return new Map(arr.map(x=>[String(x.id),JSON.stringify(x)]));
-  }
-  function diffIds(table,before){
-    const arr=Array.isArray(db?.[table])?db[table]:[];
-    const changed=[];
-    const after=new Map(arr.map(x=>[String(x.id),JSON.stringify(x)]));
-    for(const [id,val] of after){ if(before.get(id)!==val) changed.push(id); }
-    for(const id of before.keys()){ if(!after.has(id)) changed.push(id); }
-    return [...new Set(changed)];
-  }
-
-  function wrapSave(name,tables){
-    const fn=window[name];
-    if(typeof fn!=='function' || fn.__rkServerOnlyWrapped) return;
-    const w=function(...args){
-      const before={}; tables.forEach(t=>before[t]=snapshotTable(t));
-      const result=fn.apply(this,args);
-      Promise.resolve(result).then(()=>{
-        tables.forEach(t=>{
-          const ids=diffIds(t,before[t]);
-          if(ids.length) window.rkCloudMarkDirty?.(t,ids);
-        });
-      }).catch(()=>{});
-      return result;
-    };
-    w.__rkServerOnlyWrapped=true;
-    window[name]=w;
-  }
-
-  Object.entries(tableMap).forEach(([name,tables])=>wrapSave(name,tables));
-
-  // Activity log is its own server table and is appended by rkLog().
-  wrapSave('rkLog',['activityLog']);
-
-  // Settings have a dedicated upsert path. Keep UI-only resets/logo removal in sync too.
-  ['resetUISettings','removeCompanyLogo'].forEach(name=>{
-    const fn=window[name];
-    if(typeof fn!=='function' || fn.__rkServerOnlyWrapped) return;
-    const w=function(...args){
-      const r=fn.apply(this,args);
-      Promise.resolve(window.rkCloudSyncSettings?.()).catch(e=>console.warn('Cloud settings sync failed:',e));
-      return r;
-    };
-    w.__rkServerOnlyWrapped=true;
-    window[name]=w;
-  });
-
-  // Never create browser database backups in server-only mode.
-  const oldCreateAuto=window.createAutoBackupSnapshot;
-  if(typeof oldCreateAuto==='function'){
-    window.createAutoBackupSnapshot=function(){
-      const el=document.getElementById('rkAutoBackupStatus');
-      if(el)el.textContent='Server-only mode — browser data backup disabled.';
-    };
-  }
-  const oldRestoreAuto=window.restoreLatestAutoBackup;
-  if(typeof oldRestoreAuto==='function'){
-    window.restoreLatestAutoBackup=function(){
-      alert('Server-only mode is enabled. App data is stored in Supabase Cloud.');
-    };
-  }
-
-  // Make the settings/status copy explicit.
-  const badgeText=()=>document.querySelectorAll('[data-rk-cloud-status]').forEach(el=>{
-    if(sessionStorage.getItem('rkStudioAuthProvider')==='supabase'){
-      el.title='Supabase is the source of truth for RK Studio data.';
-    }
-  });
-  setTimeout(badgeText,1500);
-})();
-</script>
-
-<style id="rk-v160-migration-server-only-note">
-#rkMigrationRun[disabled]{opacity:.65;cursor:not-allowed}
-</style>
-<script>
-(function(){
-  if(typeof RK_SERVER_ONLY==='undefined' || !RK_SERVER_ONLY) return;
-  const run=()=>{
-    const btn=document.getElementById('rkMigrationRun');
-    if(btn){btn.disabled=true;btn.title='Not required in server-only mode';}
-    const note=document.getElementById('rkMigrationMessage');
-    if(note){note.dataset.type='info';note.textContent='Server-only mode: Supabase is the source of truth. No local data migration is performed.';}
-  };
-  [700,1400,2500].forEach(ms=>setTimeout(run,ms));
 })();
 </script>
 </body>
