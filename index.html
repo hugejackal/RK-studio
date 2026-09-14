@@ -4615,9 +4615,29 @@ async function rkCreateInvoicePDFBlob(invoiceId){
     const h=document.createElement('div');
     h.style.cssText=[
       'position:fixed','left:-100000px','top:0','width:794px',
-      'background:#fff','color:#111','margin:0','padding:0','z-index:-1',
-      'font-family:Arial,sans-serif'
+      'background:#fff','color:#20212a','margin:0','padding:0','z-index:-1',
+      'font-family:Arial,sans-serif',
+      '--bg:#fff','--card:#fff','--text:#20212a','--muted:#737784','--border:#dddddf',
+      '--primary:#6c4df6','--secondary:#9a84ff','--due-bg:#f6f3ff','--due-text:#20212a',
+      '--due-label:#737784','--due-amount:#20212a'
     ].join(';');
+    const css=document.createElement('style');
+    css.textContent=`
+      .invoice,.invoice *{color:#20212a!important;-webkit-text-fill-color:#20212a!important;}
+      .invoice{background:#fff!important;border-color:#ddd!important;}
+      .invoice .muted,.invoice th,.invoice .invoice-package-note,.invoice .invoice-package-services,
+      .invoice .invoice-line-services,.invoice .invoice-terms-intro,.invoice .invoice-term span,
+      .invoice .sub{color:#5f636d!important;-webkit-text-fill-color:#5f636d!important;}
+      .invoice th,.invoice td{border-color:#d8d8dc!important;}
+      .invoice .remaining-box,.invoice .current-due,.invoice .invoice-due-box,
+      .invoice > div[style*="background:#f6f4ff"]{background:#f6f3ff!important;color:#20212a!important;}
+      .invoice .remaining-box *, .invoice .current-due *, .invoice .invoice-due-box *{color:#20212a!important;-webkit-text-fill-color:#20212a!important;}
+      .invoice .payment-structure,.invoice .invoice-terms{background:#fff!important;color:#20212a!important;border-color:#ddd!important;}
+      .invoice .payment-structure *, .invoice .invoice-terms *{color:#20212a!important;-webkit-text-fill-color:#20212a!important;}
+      .invoice .rk-invoice-logo{display:block!important;object-fit:contain!important;object-position:left top!important;}
+      .invoice .avatar{object-fit:cover!important;}
+    `;
+    h.appendChild(css);
     document.body.appendChild(h);
     return h;
   }
@@ -4698,9 +4718,9 @@ async function rkCreateInvoicePDFBlob(invoiceId){
       ctx.fillRect(0,0,slice.width,slice.height);
       ctx.drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
 
-      const img=slice.toDataURL('image/jpeg',0.96);
+      const img=slice.toDataURL('image/png');
       const mmH=(slice.height*usableW)/canvas.width;
-      pdf.addImage(img,'JPEG',margin,margin,usableW,mmH,undefined,'FAST');
+      pdf.addImage(img,'PNG',margin,margin,usableW,mmH,undefined,'FAST');
 
       y=cut;
     }
@@ -4717,7 +4737,7 @@ async function rkCreateInvoicePDFBlob(invoiceId){
     holder.appendChild(clone);
     try{
       const canvas=await html2canvas(clone,{
-        scale:2,useCORS:true,backgroundColor:'#fff',
+        scale:2.5,useCORS:true,backgroundColor:'#fff',
         logging:false,windowWidth:794,imageTimeout:15000
       });
       addCanvasPages(canvas,getSafeCuts(clone));
