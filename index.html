@@ -3006,8 +3006,8 @@ async function openInvoiceView(id){
     <div class="invoicehead">
       <div>${db.settings?.companyLogo?`<img class="rk-invoice-logo" src="${db.settings.companyLogo}" alt="Company Logo">`:``}
         <h2>${esc(db.settings?.studio||"RK Studio")}</h2>
-        <div class="muted">${esc(db.settings?.address||"")}</div>
-        <div class="muted">${esc(db.settings?.phone||"")}</div>
+        <div class="muted"><b>Add:</b> ${esc(db.settings?.address||"")}</div>
+        <div class="muted"><b>Mob:</b> ${esc(db.settings?.phone||"")}</div>
       </div>
       <div class="right"><b>INVOICE</b><br>${esc(i.number||"")}<br>${esc(i.date||"")}</div>
     </div>
